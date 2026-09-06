@@ -10,15 +10,76 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: List files
+        run: |
+          echo "=== Root files ==="
+          ls -la
+
       - name: Unzip source
         run: |
-          unzip -o mvp-live-analyser-fixed-src.zip -d project
-          ls -la project/
-          # Agar zip ke andar ek folder hai to usko handle karo
-          if [ -d project/*/gradlew ]; then
-            mv project/*/* project/ 2>/dev/null || true
+          ZIP_FILE=$(find . -maxdepth 1 -name "*.zip" -type f | head -1)
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: Koi zip file nahi mili!"
+            ls -la
+            exit 1
           fi
-          find project -name "gradlew" | head -5
+          echo "Found zip: $ZIP_FILE"
+          mkdir -p project
+          unzip -o "$ZIP_FILE" -d project
+          echo "=== After unzip ==="
+          ls -la project/
+
+          # Agar zip ke andar ek folder hai to uske content upar lao
+          INNER_COUNT=$(find project -maxdepth 1 -mindepth 1 -type d | wc -l)
+          if [ "$INNER_COUNT" -eq 1 ]; then
+            INNER=$(find project -maxdepth 1 -mindepth 1 -type d | head -1)
+            echo "Inner folder: $INNER"
+            mv "$INNER"/* project/ 2>/dev/null || true
+            mv "$INNER"/.[!.]* project/ 2>/dev/null || true
+            rmdir "$INNER" 2>/dev/null || true
+          fi
+
+          echo "=== Final structure ==="
+          ls -la project/
+          find project -name "gradlew" | head -3
+
+      - name: Create dummy google-services.json (if missing)
+        run: |
+          APP_DIR=$(find project -type d -path "*/app" | head -1)
+          if [ -z "$APP_DIR" ]; then
+            echo "app folder nahi mila"
+            find project -maxdepth 3 -type d
+            exit 1
+          fi
+          echo "App dir: $APP_DIR"
+          if [ ! -f "$APP_DIR/google-services.json" ]; then
+            echo "Creating dummy google-services.json..."
+            cat > "$APP_DIR/google-services.json" << 'EOF'
+          {
+            "project_info": {
+              "project_number": "123456789012",
+              "project_id": "dummy-esports-project",
+              "storage_bucket": "dummy-esports-project.appspot.com"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:123456789012:android:abcdef123456",
+                  "android_client_info": {
+                    "package_name": "com.example.esports"
+                  }
+                },
+                "oauth_client": [],
+                "api_key": [ { "current_key": "AIzaSyDummyKeyForBuildOnly" } ],
+                "services": { "appinvite_service": { "other_platform_oauth_client": [] } }
+              }
+            ],
+            "configuration_version": "1"
+          }
+          EOF
+          else
+            echo "google-services.json already exists"
+          fi
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -29,27 +90,20 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Make gradlew executable
+      - name: Build Debug APK
         run: |
           cd project
-          # gradlew dhoondo
           GRADLEW=$(find . -name "gradlew" | head -1)
           if [ -z "$GRADLEW" ]; then
-            echo "gradlew not found!"
-            find . -maxdepth 3 -type f | head -30
+            echo "gradlew nahi mila!"
+            find . -maxdepth 4 -type f | head -40
             exit 1
           fi
           echo "Found gradlew at: $GRADLEW"
           chmod +x "$GRADLEW"
-          # agar gradlew subfolder me hai to us folder me chalo
           GRADLE_DIR=$(dirname "$GRADLEW")
-          echo "Working directory: $GRADLE_DIR"
-          echo "GRADLE_DIR=$GRADLE_DIR" >> $GITHUB_ENV
-
-      - name: Build Debug APK
-        run: |
-          cd project
-          cd $GRADLE_DIR
+          cd "$GRADLE_DIR"
+          echo "Building from: $(pwd)"
           ./gradlew assembleDebug --stacktrace
 
       - name: Upload APK
@@ -59,3 +113,4 @@ jobs:
           path: |
             project/**/app/build/outputs/apk/debug/*.apk
             **/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: warn
