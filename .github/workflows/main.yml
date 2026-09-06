@@ -10,7 +10,35 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 
+      - name: List files
+        run: |
+          echo "=== Root files ==="
+          ls -la
+
+      - name: Unzip source
+        run: |
+          ZIP_FILE=$(find . -maxdepth 1 -name "*.zip" -type f | head -1)
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: Koi zip file nahi mili!"
+            ls -la
+            exit 1
+          fi
+          echo "Found zip: $ZIP_FILE"
+          mkdir -p project
+          unzip -o "$ZIP_FILE" -d project
+          echo "=== After unzip ==="
+          ls -la project/
+
+          # Agar zip ke andar ek folder hai to uske content upar lao
+          INNER_COUNT=$(find project -maxdepth 1 -mindepth 1 -type d | wc -l)
+          if [ "$INNER_COUNT" -eq 1 ]; then
+            INNER=$(find project -maxdepth 1 -mindepth 1 -type d | head -1)
+            echo "Inner folder: $INNER"
+            mv "$INNER"/* project/ 2>/dev/null || true
+            mv "$INNER"/.[!.]* project/ 2>/dev/null || true
+            rmdir "$INNER" 2>/dev/null || true
+          fi
+
           echo "=== Final structure ==="
           ls -la project/
           find project -name "gradlew" | head -3
