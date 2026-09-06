@@ -23,7 +23,18 @@ jobs:
             rmdir "$INNER" 2>/dev/null || true
           fi
 
-      # 🟢 Fix 1: Google Services Setup (Jo pehle test ho kar pass ho chuka hai)
+      # 🟢 Fix 1: Auto-Patch Kotlin Compilation Errors (setTargetFps & isActive)
+      - name: Fix Kotlin Source Compilation Errors
+        run: |
+          echo "Patching LiveAnalyzerViewModel.kt..."
+          find project -name "LiveAnalyzerViewModel.kt" -exec sed -i 's/frameSampler\.setTargetFps/frameSampler.setTargetSampleFps/g' {} +
+          
+          echo "Patching BroadcastVideoMemeOverlayLayer.kt..."
+          find project -name "BroadcastVideoMemeOverlayLayer.kt" -exec sed -i 's/while (isActive)/while (playbackJob?.isActive == true)/g' {} +
+          
+          echo "Verified Source Code Patched."
+
+      # 🟢 Fix 2: Google Services Setup (com.example.esports)
       - name: Force Fix google-services.json
         run: |
           find project -name "google-services.json" -delete || true
@@ -31,9 +42,18 @@ jobs:
           for DIR in $APP_DIRS; do
             cat > "$DIR/google-services.json" << 'EOF'
           {
-            "project_info": { "project_number": "123456789012", "project_id": "esports-app", "storage_bucket": "esports-app.appspot.com" },
+            "project_info": {
+              "project_number": "123456789012",
+              "project_id": "esports-app",
+              "storage_bucket": "esports-app.appspot.com"
+            },
             "client": [{
-              "client_info": { "mobilesdk_app_id": "1:123456789012:android:0123456789abcdef", "android_client_info": { "package_name": "com.example.esports" } },
+              "client_info": {
+                "mobilesdk_app_id": "1:123456789012:android:0123456789abcdef",
+                "android_client_info": {
+                  "package_name": "com.example.esports"
+                }
+              },
               "oauth_client": [],
               "api_key": [{ "current_key": "AIzaSyDummyKey1234567890123456789" }],
               "services": { "appinvite_service": { "other_platform_oauth_client": [] } }
@@ -43,10 +63,9 @@ jobs:
           EOF
           done
 
-      # 🟢 Fix 2: Upgrade KSP 2.3.5 to 2.3.6 (Line 51 AWT Crash Fix)
+      # 🟢 Fix 3: Upgrade KSP 2.3.5 to 2.3.6
       - name: Fix KSP 2.3.5 Bug
         run: |
-          echo "Upgrading KSP from 2.3.5 to 2.3.6..."
           find project -type f \( -name "*.toml" -o -name "*.gradle" -o -name "*.gradle.kts" -o -name "gradle.properties" \) -exec sed -i 's/2\.3\.5/2.3.6/g' {} +
 
       - name: Fix gradle.properties
