@@ -23,45 +23,31 @@ jobs:
             rmdir "$INNER" 2>/dev/null || true
           fi
 
-      # 🟢 Exact package 'com.example.esports' ke sath google-services.json force create karein
+      # 🟢 Fix 1: Google Services Setup (Jo pehle test ho kar pass ho chuka hai)
       - name: Force Fix google-services.json
         run: |
           find project -name "google-services.json" -delete || true
           APP_DIRS=$(find project -type d -name "app")
           for DIR in $APP_DIRS; do
-            echo "Writing google-services.json into $DIR"
             cat > "$DIR/google-services.json" << 'EOF'
           {
-            "project_info": {
-              "project_number": "123456789012",
-              "project_id": "esports-app",
-              "storage_bucket": "esports-app.appspot.com"
-            },
-            "client": [
-              {
-                "client_info": {
-                  "mobilesdk_app_id": "1:123456789012:android:0123456789abcdef",
-                  "android_client_info": {
-                    "package_name": "com.example.esports"
-                  }
-                },
-                "oauth_client": [],
-                "api_key": [
-                  {
-                    "current_key": "AIzaSyDummyKey1234567890123456789"
-                  }
-                ],
-                "services": {
-                  "appinvite_service": {
-                    "other_platform_oauth_client": []
-                  }
-                }
-              }
-            ],
+            "project_info": { "project_number": "123456789012", "project_id": "esports-app", "storage_bucket": "esports-app.appspot.com" },
+            "client": [{
+              "client_info": { "mobilesdk_app_id": "1:123456789012:android:0123456789abcdef", "android_client_info": { "package_name": "com.example.esports" } },
+              "oauth_client": [],
+              "api_key": [{ "current_key": "AIzaSyDummyKey1234567890123456789" }],
+              "services": { "appinvite_service": { "other_platform_oauth_client": [] } }
+            }],
             "configuration_version": "1"
           }
           EOF
           done
+
+      # 🟢 Fix 2: Upgrade KSP 2.3.5 to 2.3.6 (Line 51 AWT Crash Fix)
+      - name: Fix KSP 2.3.5 Bug
+        run: |
+          echo "Upgrading KSP from 2.3.5 to 2.3.6..."
+          find project -type f \( -name "*.toml" -o -name "*.gradle" -o -name "*.gradle.kts" -o -name "gradle.properties" \) -exec sed -i 's/2\.3\.5/2.3.6/g' {} +
 
       - name: Fix gradle.properties
         run: |
