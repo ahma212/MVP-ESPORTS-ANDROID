@@ -41,6 +41,23 @@ jobs:
           EOF
           fi
 
+      # 🟢 YEH STEP KSP 2.3.5 BUG KO AUTOMATICALLY FIX KAREGA
+      - name: Fix KSP 2.3.5 to 2.3.6
+        run: |
+          echo "Replacing KSP 2.3.5 with 2.3.6 across all project files..."
+          find project -type f \( -name "*.toml" -o -name "*.gradle" -o -name "*.gradle.kts" \) -exec sed -i 's/2\.3\.5/2.3.6/g' {} +
+          echo "Done checking files."
+
+      - name: Fix gradle.properties
+        run: |
+          GRADLE_DIR=$(dirname $(find project -name "gradlew" | head -1))
+          cat >> "$GRADLE_DIR/gradle.properties" << 'EOF'
+          org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8 -Djava.awt.headless=true
+          org.gradle.daemon=false
+          org.gradle.parallel=false
+          ksp.incremental=false
+          EOF
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -50,41 +67,19 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Fix gradle.properties & KSP Crash
-        run: |
-          GRADLE_DIR=$(dirname $(find project -name "gradlew" | head -1))
-          
-          # Clean old gradle.properties and write exact CI compatible properties
-          cat > "$GRADLE_DIR/gradle.properties" << 'EOF'
-          org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8 -Djava.awt.headless=false
-          org.gradle.daemon=false
-          org.gradle.parallel=false
-          org.gradle.configuration-cache=false
-          ksp.useKSP2=false
-          ksp.incremental=false
-          ksp.run.in.separate.process=false
-          EOF
-
-      - name: Install Xvfb (Virtual Display for KSP)
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq xvfb
-
       - name: Build Debug APK
         run: |
           GRADLEW=$(find project -name "gradlew" | head -1)
           chmod +x "$GRADLEW"
           GRADLE_DIR=$(dirname "$GRADLEW")
           cd "$GRADLE_DIR"
-          
-          # Run inside virtual display to fix java.awt headless NullPointerException
-          xvfb-run -a ./gradlew assembleDebug --no-daemon --no-configuration-cache --stacktrace
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
           path: |
-            project/**/build/outputs/apk/debug/*.apk
-            **/build/outputs/apk/debug/*.apk
+            project/**/app/build/outputs/apk/debug/*.apk
+            **/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
