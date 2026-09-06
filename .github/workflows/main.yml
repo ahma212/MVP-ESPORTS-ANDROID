@@ -13,42 +13,25 @@ jobs:
       - name: Unzip source
         run: |
           ZIP_FILE=$(find . -maxdepth 1 -name "*.zip" -type f | head -1)
-          if [ -z "$ZIP_FILE" ]; then
-            echo "No zip found"
-            ls -la
-            exit 1
-          fi
           echo "Found: $ZIP_FILE"
           mkdir -p project
           unzip -o "$ZIP_FILE" -d project
-
-          # Inner folder handle
           INNER=$(find project -maxdepth 1 -mindepth 1 -type d | head -1)
           if [ -n "$INNER" ] && [ $(find project -maxdepth 1 -mindepth 1 -type d | wc -l) -eq 1 ]; then
             mv "$INNER"/* project/ 2>/dev/null || true
             mv "$INNER"/.[!.]* project/ 2>/dev/null || true
             rmdir "$INNER" 2>/dev/null || true
           fi
-          ls -la project/
-          find project -name "gradlew" | head -2
 
       - name: Create dummy google-services.json
         run: |
           APP_DIR=$(find project -type d -path "*/app" | head -1)
-          echo "App dir: $APP_DIR"
           if [ ! -f "$APP_DIR/google-services.json" ]; then
             cat > "$APP_DIR/google-services.json" << 'EOF'
           {
-            "project_info": {
-              "project_number": "123456789012",
-              "project_id": "dummy-esports",
-              "storage_bucket": "dummy-esports.appspot.com"
-            },
+            "project_info": { "project_number": "123456789012", "project_id": "dummy", "storage_bucket": "dummy.appspot.com" },
             "client": [{
-              "client_info": {
-                "mobilesdk_app_id": "1:123456789012:android:abcdef",
-                "android_client_info": { "package_name": "com.example.esports" }
-              },
+              "client_info": { "mobilesdk_app_id": "1:123456789012:android:abc", "android_client_info": { "package_name": "com.example.esports" } },
               "oauth_client": [],
               "api_key": [{ "current_key": "AIzaSyDummy" }],
               "services": { "appinvite_service": { "other_platform_oauth_client": [] } }
@@ -58,24 +41,26 @@ jobs:
           EOF
           fi
 
-      - name: Fix gradle.properties for CI (KSP fix)
+      - name: Downgrade KSP version (CI fix)
+        run: |
+          TOML=$(find project -name "libs.versions.toml" | head -1)
+          echo "Editing: $TOML"
+          # Force older stable KSP
+          sed -i 's/googleDevtoolsKsp = ".*"/googleDevtoolsKsp = "2.0.21"/' "$TOML"
+          # Also lower Kotlin a bit if needed for compatibility
+          sed -i 's/kotlin = "2.2.10"/kotlin = "2.0.21"/' "$TOML"
+          echo "=== After change ==="
+          grep -E "kotlin|ksp|Ksp" "$TOML"
+
+      - name: Fix gradle.properties
         run: |
           GRADLE_DIR=$(dirname $(find project -name "gradlew" | head -1))
-          echo "Gradle dir: $GRADLE_DIR"
           cat >> "$GRADLE_DIR/gradle.properties" << 'EOF'
-
-          # CI / Headless fixes
-          org.gradle.jvmargs=-Xmx3g -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8 -Djava.awt.headless=true
+          org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8 -Djava.awt.headless=true
           org.gradle.daemon=false
           org.gradle.parallel=false
-          org.gradle.caching=false
           ksp.incremental=false
-          ksp.incremental.log=false
-          android.useAndroidX=true
-          android.enableJetifier=true
           EOF
-          echo "=== gradle.properties ==="
-          cat "$GRADLE_DIR/gradle.properties"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -86,14 +71,16 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Install Xvfb
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb
+
       - name: Build Debug APK
         run: |
           GRADLEW=$(find project -name "gradlew" | head -1)
           chmod +x "$GRADLEW"
           GRADLE_DIR=$(dirname "$GRADLEW")
           cd "$GRADLE_DIR"
-          echo "Building from $(pwd)"
-          ./gradlew assembleDebug --no-daemon --stacktrace -Pksp.incremental=false
+          xvfb-run -a ./gradlew assembleDebug --no-daemon --stacktrace -Pksp.incremental=false
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
