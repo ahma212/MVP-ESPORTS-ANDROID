@@ -41,27 +41,6 @@ jobs:
           EOF
           fi
 
-      - name: Downgrade KSP version (CI fix)
-        run: |
-          TOML=$(find project -name "libs.versions.toml" | head -1)
-          echo "Editing: $TOML"
-          # Force older stable KSP
-          sed -i 's/googleDevtoolsKsp = ".*"/googleDevtoolsKsp = "2.0.21"/' "$TOML"
-          # Also lower Kotlin a bit if needed for compatibility
-          sed -i 's/kotlin = "2.2.10"/kotlin = "2.0.21"/' "$TOML"
-          echo "=== After change ==="
-          grep -E "kotlin|ksp|Ksp" "$TOML"
-
-      - name: Fix gradle.properties
-        run: |
-          GRADLE_DIR=$(dirname $(find project -name "gradlew" | head -1))
-          cat >> "$GRADLE_DIR/gradle.properties" << 'EOF'
-          org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8 -Djava.awt.headless=true
-          org.gradle.daemon=false
-          org.gradle.parallel=false
-          ksp.incremental=false
-          EOF
-
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -71,8 +50,25 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Xvfb
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb
+      - name: Fix gradle.properties & KSP Crash
+        run: |
+          GRADLE_DIR=$(dirname $(find project -name "gradlew" | head -1))
+          
+          # Clean old gradle.properties and write exact CI compatible properties
+          cat > "$GRADLE_DIR/gradle.properties" << 'EOF'
+          org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8 -Djava.awt.headless=false
+          org.gradle.daemon=false
+          org.gradle.parallel=false
+          org.gradle.configuration-cache=false
+          ksp.useKSP2=false
+          ksp.incremental=false
+          ksp.run.in.separate.process=false
+          EOF
+
+      - name: Install Xvfb (Virtual Display for KSP)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb
 
       - name: Build Debug APK
         run: |
@@ -80,13 +76,15 @@ jobs:
           chmod +x "$GRADLEW"
           GRADLE_DIR=$(dirname "$GRADLEW")
           cd "$GRADLE_DIR"
-          xvfb-run -a ./gradlew assembleDebug --no-daemon --stacktrace -Pksp.incremental=false
+          
+          # Run inside virtual display to fix java.awt headless NullPointerException
+          xvfb-run -a ./gradlew assembleDebug --no-daemon --no-configuration-cache --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
           path: |
-            project/**/app/build/outputs/apk/debug/*.apk
-            **/app/build/outputs/apk/debug/*.apk
-          if-no-files-found: warn
+            project/**/build/outputs/apk/debug/*.apk
+            **/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
