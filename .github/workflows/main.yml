@@ -1,13 +1,24 @@
 name: Build APK
 
 on:
-  workflow_dispatch:   # Manual trigger
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Unzip source
+        run: |
+          unzip -o mvp-live-analyser-fixed-src.zip -d project
+          ls -la project/
+          # Agar zip ke andar ek folder hai to usko handle karo
+          if [ -d project/*/gradlew ]; then
+            mv project/*/* project/ 2>/dev/null || true
+          fi
+          find project -name "gradlew" | head -5
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -18,14 +29,33 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+      - name: Make gradlew executable
+        run: |
+          cd project
+          # gradlew dhoondo
+          GRADLEW=$(find . -name "gradlew" | head -1)
+          if [ -z "$GRADLEW" ]; then
+            echo "gradlew not found!"
+            find . -maxdepth 3 -type f | head -30
+            exit 1
+          fi
+          echo "Found gradlew at: $GRADLEW"
+          chmod +x "$GRADLEW"
+          # agar gradlew subfolder me hai to us folder me chalo
+          GRADLE_DIR=$(dirname "$GRADLEW")
+          echo "Working directory: $GRADLE_DIR"
+          echo "GRADLE_DIR=$GRADLE_DIR" >> $GITHUB_ENV
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: |
+          cd project
+          cd $GRADLE_DIR
+          ./gradlew assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: app-debug
-          path: app/build/outputs/apk/debug/*.apk
+          path: |
+            project/**/app/build/outputs/apk/debug/*.apk
+            **/app/build/outputs/apk/debug/*.apk
