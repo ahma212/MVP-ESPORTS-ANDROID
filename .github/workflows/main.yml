@@ -23,34 +23,45 @@ jobs:
             rmdir "$INNER" 2>/dev/null || true
           fi
 
-      - name: Auto-Detect Package Name & Create google-services.json
+      # 🟢 Exact package 'com.example.esports' ke sath google-services.json force create karein
+      - name: Force Fix google-services.json
         run: |
-          APP_DIR=$(find project -type d -path "*/app" | head -1)
-          
-          # Detect package name / namespace from build.gradle or AndroidManifest
-          PKG=$(grep -roh 'namespace.*=.*".*"' project/ | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
-          if [ -z "$PKG" ]; then
-            PKG=$(grep -roh 'applicationId.*".*"' project/ | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
-          fi
-          if [ -z "$PKG" ]; then
-            PKG="com.example.esports"
-          fi
-          echo "Detected Package Name: $PKG"
-
-          if [ ! -f "$APP_DIR/google-services.json" ]; then
-            cat > "$APP_DIR/google-services.json" << EOF
+          find project -name "google-services.json" -delete || true
+          APP_DIRS=$(find project -type d -name "app")
+          for DIR in $APP_DIRS; do
+            echo "Writing google-services.json into $DIR"
+            cat > "$DIR/google-services.json" << 'EOF'
           {
-            "project_info": { "project_number": "123456789012", "project_id": "dummy-app", "storage_bucket": "dummy-app.appspot.com" },
-            "client": [{
-              "client_info": { "mobilesdk_app_id": "1:123456789012:android:abc", "android_client_info": { "package_name": "$PKG" } },
-              "oauth_client": [],
-              "api_key": [{ "current_key": "AIzaSyDummyKeyForBuildOnly123456789" }],
-              "services": { "appinvite_service": { "other_platform_oauth_client": [] } }
-            }],
+            "project_info": {
+              "project_number": "123456789012",
+              "project_id": "esports-app",
+              "storage_bucket": "esports-app.appspot.com"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:123456789012:android:0123456789abcdef",
+                  "android_client_info": {
+                    "package_name": "com.example.esports"
+                  }
+                },
+                "oauth_client": [],
+                "api_key": [
+                  {
+                    "current_key": "AIzaSyDummyKey1234567890123456789"
+                  }
+                ],
+                "services": {
+                  "appinvite_service": {
+                    "other_platform_oauth_client": []
+                  }
+                }
+              }
+            ],
             "configuration_version": "1"
           }
           EOF
-          fi
+          done
 
       - name: Fix gradle.properties
         run: |
@@ -80,15 +91,7 @@ jobs:
           chmod +x "$GRADLEW"
           GRADLE_DIR=$(dirname "$GRADLEW")
           cd "$GRADLE_DIR"
-          
-          # Run build and display exact error if it fails
-          ./gradlew assembleDebug --no-daemon --no-configuration-cache --stacktrace || {
-            echo "=============================================="
-            echo "⚠️ BUILD FAILED - EXACT ERROR DETAILS:"
-            echo "=============================================="
-            ./gradlew assembleDebug --no-daemon --no-configuration-cache --info | grep -E -A 10 "(What went wrong|FAILURE:|Caused by:)" || true
-            exit 1
-          }
+          ./gradlew assembleDebug --no-daemon --no-configuration-cache --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
