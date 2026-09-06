@@ -41,12 +41,20 @@ jobs:
           EOF
           fi
 
-      # 🟢 YEH STEP KSP 2.3.5 BUG KO AUTOMATICALLY FIX KAREGA
-      - name: Fix KSP 2.3.5 to 2.3.6
+      # 🟢 1. Gradle Wrapper ko stable 8.7 par downgrade karein (Gradle 9 incompatibilities fix karne ke liye)
+      - name: Force Stable Gradle 8.7
         run: |
-          echo "Replacing KSP 2.3.5 with 2.3.6 across all project files..."
+          WRAPPER_PROP=$(find project -name "gradle-wrapper.properties" | head -1)
+          if [ -f "$WRAPPER_PROP" ]; then
+            echo "Updating $WRAPPER_PROP to Gradle 8.7"
+            sed -i 's|distributionUrl=.*|distributionUrl=https\\://services.gradle.org/distributions/gradle-8.7-bin.zip|' "$WRAPPER_PROP"
+            cat "$WRAPPER_PROP"
+          fi
+
+      # 🟢 2. Fix KSP Versions across all files
+      - name: Fix KSP version
+        run: |
           find project -type f \( -name "*.toml" -o -name "*.gradle" -o -name "*.gradle.kts" \) -exec sed -i 's/2\.3\.5/2.3.6/g' {} +
-          echo "Done checking files."
 
       - name: Fix gradle.properties
         run: |
@@ -55,7 +63,10 @@ jobs:
           org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8 -Djava.awt.headless=true
           org.gradle.daemon=false
           org.gradle.parallel=false
+          org.gradle.configuration-cache=false
           ksp.incremental=false
+          android.useAndroidX=true
+          android.enableJetifier=true
           EOF
 
       - name: Set up JDK 17
@@ -73,7 +84,7 @@ jobs:
           chmod +x "$GRADLEW"
           GRADLE_DIR=$(dirname "$GRADLEW")
           cd "$GRADLE_DIR"
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleDebug --no-daemon --no-configuration-cache --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
