@@ -23,18 +23,13 @@ jobs:
             rmdir "$INNER" 2>/dev/null || true
           fi
 
-      # 🟢 Fix 1: Auto-Patch Kotlin Compilation Errors (setTargetFps & isActive)
+      # 🟢 Fix 1: Auto-Patch Kotlin Compilation Errors
       - name: Fix Kotlin Source Compilation Errors
         run: |
-          echo "Patching LiveAnalyzerViewModel.kt..."
           find project -name "LiveAnalyzerViewModel.kt" -exec sed -i 's/frameSampler\.setTargetFps/frameSampler.setTargetSampleFps/g' {} +
-          
-          echo "Patching BroadcastVideoMemeOverlayLayer.kt..."
           find project -name "BroadcastVideoMemeOverlayLayer.kt" -exec sed -i 's/while (isActive)/while (playbackJob?.isActive == true)/g' {} +
-          
-          echo "Verified Source Code Patched."
 
-      # 🟢 Fix 2: Google Services Setup (com.example.esports)
+      # 🟢 Fix 2: Google Services Setup
       - name: Force Fix google-services.json
         run: |
           find project -name "google-services.json" -delete || true
@@ -81,8 +76,9 @@ jobs:
           android.enableJetifier=true
           EOF
 
+      # 🟢 Updated to v5 (Warning Khatam karne ke liye)
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '17'
           distribution: 'temurin'
