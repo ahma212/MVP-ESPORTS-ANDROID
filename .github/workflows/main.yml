@@ -3,102 +3,202 @@ name: Build APK
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Unzip source
+      - name: Find Android project
+        shell: bash
         run: |
-          ZIP_FILE=$(find . -maxdepth 1 -name "*.zip" -type f | head -1)
-          echo "Found: $ZIP_FILE"
-          mkdir -p project
-          unzip -o "$ZIP_FILE" -d project
-          INNER=$(find project -maxdepth 1 -mindepth 1 -type d | head -1)
-          if [ -n "$INNER" ] && [ $(find project -maxdepth 1 -mindepth 1 -type d | wc -l) -eq 1 ]; then
-            mv "$INNER"/* project/ 2>/dev/null || true
-            mv "$INNER"/.[!.]* project/ 2>/dev/null || true
-            rmdir "$INNER" 2>/dev/null || true
+          set -e
+
+          if [ -f "settings.gradle.kts" ] || [ -f "settings.gradle" ]; then
+            PROJECT_DIR="$PWD"
+            echo "Android project found in repository root."
+          else
+            ZIP_FILE="$(find . -maxdepth 1 -type f -name '*.zip' | head -1)"
+
+            if [ -z "$ZIP_FILE" ]; then
+              echo "ERROR: No Android project and no ZIP file found."
+              exit 1
+            fi
+
+            echo "Found source ZIP: $ZIP_FILE"
+
+            rm -rf project
+            mkdir -p project
+
+            unzip -q -o "$ZIP_FILE" -d project
+
+            PROJECT_DIR="$PWD/project"
+
+            # Handle ZIP containing one outer folder.
+            if [ ! -f "$PROJECT_DIR/settings.gradle.kts" ] &&
+               [ ! -f "$PROJECT_DIR/settings.gradle" ]; then
+
+              INNER="$(find "$PROJECT_DIR" -mindepth 1 -maxdepth 1 -type d | head -1)"
+
+              if [ -n "$INNER" ] &&
+                 [ -f "$INNER/settings.gradle.kts" -o -f "$INNER/settings.gradle" ]; then
+                PROJECT_DIR="$INNER"
+              fi
+            fi
           fi
 
-      # 🟢 Fix 1: Auto-Patch Kotlin Compilation Errors
-      - name: Fix Kotlin Source Compilation Errors
-        run: |
-          find project -name "LiveAnalyzerViewModel.kt" -exec sed -i 's/frameSampler\.setTargetFps/frameSampler.setTargetSampleFps/g' {} +
-          find project -name "BroadcastVideoMemeOverlayLayer.kt" -exec sed -i 's/while (isActive)/while (playbackJob?.isActive == true)/g' {} +
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      # 🟢 Fix 2: Google Services Setup
-      - name: Force Fix google-services.json
-        run: |
-          find project -name "google-services.json" -delete || true
-          APP_DIRS=$(find project -type d -name "app")
-          for DIR in $APP_DIRS; do
-            cat > "$DIR/google-services.json" << 'EOF'
-          {
-            "project_info": {
-              "project_number": "123456789012",
-              "project_id": "esports-app",
-              "storage_bucket": "esports-app.appspot.com"
-            },
-            "client": [{
-              "client_info": {
-                "mobilesdk_app_id": "1:123456789012:android:0123456789abcdef",
-                "android_client_info": {
-                  "package_name": "com.example.esports"
-                }
-              },
-              "oauth_client": [],
-              "api_key": [{ "current_key": "AIzaSyDummyKey1234567890123456789" }],
-              "services": { "appinvite_service": { "other_platform_oauth_client": [] } }
-            }],
-            "configuration_version": "1"
-          }
-          EOF
-          done
+          echo "Project directory:"
+          echo "$PROJECT_DIR"
 
-      # 🟢 Fix 3: Upgrade KSP 2.3.5 to 2.3.6
-      - name: Fix KSP 2.3.5 Bug
-        run: |
-          find project -type f \( -name "*.toml" -o -name "*.gradle" -o -name "*.gradle.kts" -o -name "gradle.properties" \) -exec sed -i 's/2\.3\.5/2.3.6/g' {} +
+          echo "Project files:"
+          ls -la "$PROJECT_DIR"
 
-      - name: Fix gradle.properties
-        run: |
-          GRADLE_DIR=$(dirname $(find project -name "gradlew" | head -1))
-          cat >> "$GRADLE_DIR/gradle.properties" << 'EOF'
-          org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8 -Djava.awt.headless=true
-          org.gradle.daemon=false
-          org.gradle.parallel=false
-          org.gradle.configuration-cache=false
-          ksp.incremental=false
-          android.useAndroidX=true
-          android.enableJetifier=true
-          EOF
+          if [ ! -f "$PROJECT_DIR/settings.gradle.kts" ] &&
+             [ ! -f "$PROJECT_DIR/settings.gradle" ]; then
+            echo "ERROR: settings.gradle(.kts) not found."
+            exit 1
+          fi
 
-      # 🟢 Updated to v5 (Warning Khatam karne ke liye)
+          if [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ] &&
+             [ ! -f "$PROJECT_DIR/app/build.gradle" ]; then
+            echo "ERROR: app/build.gradle(.kts) not found."
+            exit 1
+          fi
+
       - name: Set up JDK 17
         uses: actions/setup-java@v5
         with:
+          distribution: temurin
           java-version: '17'
-          distribution: 'temurin'
+          cache: gradle
 
-      - name: Setup Android SDK
+      - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Build Debug APK
+      - name: Install Android SDK packages
+        shell: bash
         run: |
-          GRADLEW=$(find project -name "gradlew" | head -1)
-          chmod +x "$GRADLEW"
-          GRADLE_DIR=$(dirname "$GRADLEW")
-          cd "$GRADLE_DIR"
-          ./gradlew assembleDebug --no-daemon --no-configuration-cache --stacktrace
+          set -e
+
+          yes | sdkmanager --licenses >/dev/null || true
+
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0"
+
+      - name: Set up Gradle 9.3.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+
+      - name: Configure Gradle
+        shell: bash
+        run: |
+          set -e
+
+          cd "$PROJECT_DIR"
+
+          touch gradle.properties
+
+          cat >> gradle.properties <<'EOF'
+
+          # GitHub Actions CI
+          org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8
+          org.gradle.daemon=false
+          org.gradle.parallel=false
+          org.gradle.configuration-cache=false
+          org.gradle.caching=true
+          org.gradle.workers.max=4
+          kotlin.compiler.execution.strategy=in-process
+          android.useAndroidX=true
+          android.enableJetifier=true
+          googleServices.missing.passthrough=true
+          EOF
+
+          echo "Gradle configuration:"
+          cat gradle.properties
+
+      - name: Create Gradle Wrapper if missing
+        shell: bash
+        run: |
+          set -e
+
+          cd "$PROJECT_DIR"
+
+          if [ ! -f "./gradlew" ]; then
+            echo "Gradle wrapper missing. Creating it..."
+            gradle wrapper --gradle-version 9.3.1
+          else
+            echo "Gradle wrapper already exists."
+          fi
+
+          chmod +x ./gradlew
+
+          echo "Gradle version:"
+          ./gradlew --version
+
+      - name: Verify Gradle project
+        shell: bash
+        run: |
+          set -e
+
+          cd "$PROJECT_DIR"
+
+          ./gradlew projects \
+            --no-daemon \
+            --no-configuration-cache \
+            --stacktrace
+
+      - name: Build Debug APK
+        shell: bash
+        run: |
+          set -e
+
+          cd "$PROJECT_DIR"
+
+          ./gradlew assembleDebug \
+            --no-daemon \
+            --no-configuration-cache \
+            --stacktrace
+
+      - name: Find APK
+        shell: bash
+        run: |
+          set -e
+
+          echo "Searching for APK..."
+
+          find "$PROJECT_DIR" \
+            -type f \
+            -path "*/build/outputs/apk/debug/*.apk" \
+            -print
+
+          APK="$(find "$PROJECT_DIR" \
+            -type f \
+            -path "*/build/outputs/apk/debug/*.apk" \
+            | head -1)"
+
+          if [ -z "$APK" ]; then
+            echo "ERROR: APK was not generated."
+            exit 1
+          fi
+
+          echo "APK found:"
+          echo "$APK"
+
+          echo "APK_PATH=$APK" >> "$GITHUB_ENV"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug
-          path: |
-            project/**/app/build/outputs/apk/debug/*.apk
-            **/app/build/outputs/apk/debug/*.apk
+          name: MVP-ESPORTS-LIVE-debug
+          path: ${{ env.APK_PATH }}
           if-no-files-found: error
