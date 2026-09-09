@@ -11,12 +11,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
+      # ============================================================
+      # 1. CHECKOUT
+      # ============================================================
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ------------------------------------------------------------
-      # 1) Find Android project
-      # ------------------------------------------------------------
+
+      # ============================================================
+      # 2. FIND ANDROID PROJECT
+      # ============================================================
       - name: Find Android project
         shell: bash
         run: |
@@ -25,18 +30,20 @@ jobs:
           if [ -f "settings.gradle.kts" ] || [ -f "settings.gradle" ]; then
             PROJECT_DIR="$PWD"
             echo "Android project found in repository root."
+
           else
             ZIP_FILE="$(find . -maxdepth 1 -type f -name '*.zip' | head -1)"
 
             if [ -z "$ZIP_FILE" ]; then
-              echo "ERROR: No Android project or source ZIP found."
+              echo "ERROR: No Android project or ZIP file found."
               exit 1
             fi
 
-            echo "Found source ZIP: $ZIP_FILE"
+            echo "Found ZIP: $ZIP_FILE"
 
             rm -rf project
             mkdir -p project
+
             unzip -q -o "$ZIP_FILE" -d project
 
             PROJECT_DIR="$PWD/project"
@@ -48,6 +55,7 @@ jobs:
 
               if [ -n "$INNER" ] && \
                  { [ -f "$INNER/settings.gradle.kts" ] || [ -f "$INNER/settings.gradle" ]; }; then
+
                 PROJECT_DIR="$INNER"
               fi
             fi
@@ -72,9 +80,10 @@ jobs:
             exit 1
           fi
 
-      # ------------------------------------------------------------
-      # 2) JDK 17
-      # ------------------------------------------------------------
+
+      # ============================================================
+      # 3. JDK 17
+      # ============================================================
       - name: Set up JDK 17
         uses: actions/setup-java@v5
         with:
@@ -82,11 +91,13 @@ jobs:
           java-version: '17'
           cache: gradle
 
-      # ------------------------------------------------------------
-      # 3) Android SDK
-      # ------------------------------------------------------------
+
+      # ============================================================
+      # 4. ANDROID SDK
+      # ============================================================
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+
 
       - name: Install Android SDK packages
         shell: bash
@@ -100,17 +111,20 @@ jobs:
             "platforms;android-36" \
             "build-tools;36.0.0"
 
-      # ------------------------------------------------------------
-      # 4) Gradle 9.3.1
-      # ------------------------------------------------------------
+
+      # ============================================================
+      # 5. GRADLE 9.3.1
+      # ============================================================
       - name: Set up Gradle 9.3.1
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.3.1'
 
-      # ------------------------------------------------------------
-      # 5) Fix project Gradle settings
-      # ------------------------------------------------------------
+
+      #
+      ============================================================
+      # 6. GRADLE CONFIGURATION
+      # ============================================================
       - name: Configure Gradle
         shell: bash
         run: |
@@ -133,14 +147,12 @@ jobs:
           android.useAndroidX=true
           EOF
 
-          echo "========================================"
-          echo "GRADLE PROPERTIES"
-          echo "========================================"
-          cat gradle.properties
+          echo "Gradle configuration applied."
 
-      # ------------------------------------------------------------
-      # 6) Controlled KSP fix
-      # ------------------------------------------------------------
+
+      # ============================================================
+      # 7. KSP FIX
+      # ============================================================
       - name: Pin KSP to 2.3.7
         shell: bash
         run: |
@@ -151,29 +163,30 @@ jobs:
           TOML="gradle/libs.versions.toml"
 
           if [ ! -f "$TOML" ]; then
-            echo "ERROR: $TOML not found."
+            echo "ERROR: libs.versions.toml not found."
             exit 1
           fi
 
-          echo "Before KSP change:"
+          echo "Current KSP version:"
           grep -n "googleDevtoolsKsp" "$TOML" || true
 
           sed -i \
             's/googleDevtoolsKsp[[:space:]]*=[[:space:]]*"2\.3\.5"/googleDevtoolsKsp = "2.3.7"/' \
             "$TOML"
 
-          echo "After KSP change:"
+          echo "KSP after fix:"
           grep -n "googleDevtoolsKsp" "$TOML" || true
 
           if ! grep -q 'googleDevtoolsKsp = "2.3.7"' "$TOML"; then
-            echo "ERROR: KSP version was not changed to 2.3.7."
+            echo "ERROR: KSP 2.3.7 was not applied."
             exit 1
           fi
 
-      # ------------------------------------------------------------
-      # 7) Do NOT create fake google-services.json
-      # ------------------------------------------------------------
-      - name: Check Google Services configuration
+
+      # ============================================================
+      # 8. GOOGLE SERVICES
+      # ============================================================
+      - name: Check Google Services
         shell: bash
         run: |
           set -e
@@ -181,15 +194,16 @@ jobs:
           cd "$PROJECT_DIR"
 
           if [ -f "app/google-services.json" ]; then
-            echo "Real google-services.json found."
+            echo "google-services.json found."
           else
-            echo "No google-services.json found."
-            echo "Continuing because the project is configured to WARN when it is missing."
+            echo "google-services.json not found."
+            echo "Continuing because the project is configured to WARN."
           fi
 
-      # ------------------------------------------------------------
-      # 8) Create Gradle wrapper if missing
-      # ------------------------------------------------------------
+
+      # ============================================================
+      # 9. CREATE GRADLE WRAPPER
+      # ============================================================
       - name: Create Gradle Wrapper if missing
         shell: bash
         run: |
@@ -198,41 +212,71 @@ jobs:
           cd "$PROJECT_DIR"
 
           if [ ! -f "./gradlew" ]; then
-            echo "Gradle wrapper is missing."
-            echo "Creating wrapper with Gradle 9.3.1..."
+            echo "Gradle wrapper missing."
+            echo "Creating Gradle wrapper..."
 
             gradle wrapper --gradle-version 9.3.1
-
           else
             echo "Gradle wrapper already exists."
           fi
 
           chmod +x ./gradlew
 
-          echo "========================================"
-          echo "GRADLE VERSION"
-          echo "========================================"
-
           ./gradlew --version
 
-      # ------------------------------------------------------------
-      # 9) Clean previous build
-      # ------------------------------------------------------------
-      - name: Clean project
+
+      # ============================================================
+      # 10. CREATE CORRECT DEBUG KEYSTORE
+      #
+      ============================================================
+      - name: Create Debug Keystore
         shell: bash
         run: |
           set -e
 
           cd "$PROJECT_DIR"
 
-          ./gradlew clean \
-            --no-daemon \
-            --no-configuration-cache \
-            --stacktrace
+          KEYSTORE="$PROJECT_DIR/debug.keystore"
 
-      # ------------------------------------------------------------
-      # 10) Verify Gradle project
-      # ------------------------------------------------------------
+          echo "========================================"
+          echo "CHECKING DEBUG KEYSTORE"
+          echo "========================================"
+
+          if [ -f "$KEYSTORE" ]; then
+            echo "Debug keystore already exists:"
+            echo "$KEYSTORE"
+
+          else
+            echo "Debug keystore does not exist."
+            echo "Creating it at:"
+            echo "$KEYSTORE"
+
+            keytool -genkeypair \
+              -v \
+              -keystore "$KEYSTORE" \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass androiddebugkey \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+
+            echo "Debug keystore created successfully."
+          fi
+
+          echo "Keystore check:"
+          ls -lh "$KEYSTORE"
+
+          if [ ! -f "$KEYSTORE" ]; then
+            echo "ERROR: debug.keystore was not created."
+            exit 1
+          fi
+
+
+      # ============================================================
+      # 11. VERIFY GRADLE PROJECT
+      # ============================================================
       - name: Verify Gradle project
         shell: bash
         run: |
@@ -245,9 +289,26 @@ jobs:
             --no-configuration-cache \
             --stacktrace
 
-      # ------------------------------------------------------------
-      # 11) Build Debug APK
-      # ------------------------------------------------------------
+
+      # ============================================================
+      # 12. CLEAN PROJECT
+      # ============================================================
+      - name: Clean project
+        shell: bash
+        run: |
+          set -e
+
+          cd "$PROJECT_DIR"
+
+          ./gradlew clean \
+            --no-daemon \
+            --no-configuration-cache \
+            --stacktrace
+
+
+      # ============================================================
+      # 13. BUILD DEBUG APK
+      # ============================================================
       - name: Build Debug APK
         shell: bash
         run: |
@@ -265,9 +326,10 @@ jobs:
             --stacktrace \
             --info
 
-      # ------------------------------------------------------------
-      # 12) Find APK
-      # ------------------------------------------------------------
+
+      # ============================================================
+      # 14. FIND APK
+      # ============================================================
       - name: Find APK
         shell: bash
         run: |
@@ -297,9 +359,11 @@ jobs:
 
           echo "APK_PATH=$APK" >> "$GITHUB_ENV"
 
-      # ------------------------------------------------------------
-      # 13) Upload APK
-      # ------------------------------------------------------------
+
+      #
+      ============================================================
+      # 15. UPLOAD APK
+      # ============================================================
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
