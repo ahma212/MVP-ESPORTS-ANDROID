@@ -256,4 +256,53 @@ jobs:
           cd "$PROJECT_DIR"
 
           echo "========================================"
-          echo "BUILDING
+          echo "BUILDING DEBUG APK"
+          echo "========================================"
+
+          ./gradlew assembleDebug \
+            --no-daemon \
+            --no-configuration-cache \
+            --stacktrace \
+            --info
+
+      # ------------------------------------------------------------
+      # 12) Find APK
+      # ------------------------------------------------------------
+      - name: Find APK
+        shell: bash
+        run: |
+          set -e
+
+          echo "========================================"
+          echo "SEARCHING FOR APK"
+          echo "========================================"
+
+          find "$PROJECT_DIR" \
+            -type f \
+            -path "*/build/outputs/apk/debug/*.apk" \
+            -print
+
+          APK="$(find "$PROJECT_DIR" \
+            -type f \
+            -path "*/build/outputs/apk/debug/*.apk" \
+            | head -1)"
+
+          if [ -z "$APK" ]; then
+            echo "ERROR: APK was not generated."
+            exit 1
+          fi
+
+          echo "APK FOUND:"
+          echo "$APK"
+
+          echo "APK_PATH=$APK" >> "$GITHUB_ENV"
+
+      # ------------------------------------------------------------
+      # 13) Upload APK
+      # ------------------------------------------------------------
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MVP-ESPORTS-LIVE-debug
+          path: ${{ env.APK_PATH }}
+          if-no-files-found: error
