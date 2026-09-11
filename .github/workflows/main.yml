@@ -1,369 +1,108 @@
-name: Build APK
-
-on:
-  workflow_dispatch:
-
-permissions:
-  contents: read
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-
-    steps:
-
-      # ============================================================
-      # 1. CHECKOUT
-      # ============================================================
-      - name: Checkout
-        uses: actions/checkout@v4
-
-
-      # ============================================================
-      # 2. FIND ANDROID PROJECT
-      # ============================================================
       - name: Find Android project
         shell: bash
         run: |
           set -e
 
+          echo "========================================"
+          echo "SEARCHING FOR ANDROID PROJECT"
+          echo "========================================"
+
+          # --------------------------------------------------------
+          # Case 1: Android project already exists in repository root
+          # --------------------------------------------------------
           if [ -f "settings.gradle.kts" ] || [ -f "settings.gradle" ]; then
+
             PROJECT_DIR="$PWD"
-            echo "Android project found in repository root."
+
+            echo "Android project found in repository root:"
+            echo "$PROJECT_DIR"
 
           else
+
+            # ------------------------------------------------------
+            # Case 2: Android project is inside a ZIP
+            # ------------------------------------------------------
             ZIP_FILE="$(find . -maxdepth 1 -type f -name '*.zip' | head -1)"
 
             if [ -z "$ZIP_FILE" ]; then
-              echo "ERROR: No Android project or ZIP file found."
+              echo "ERROR: No Android project and no ZIP file found."
               exit 1
             fi
 
-            echo "Found ZIP: $ZIP_FILE"
+            echo "Source ZIP found:"
+            echo "$ZIP_FILE"
 
             rm -rf project
             mkdir -p project
 
             unzip -q -o "$ZIP_FILE" -d project
 
-            PROJECT_DIR="$PWD/project"
+            echo ""
+            echo "ZIP contents:"
+            find project -maxdepth 5 -type f \
+              \( -name "settings.gradle.kts" -o -name "settings.gradle" \) \
+              -print
 
-            if [ ! -f "$PROJECT_DIR/settings.gradle.kts" ] && \
-               [ ! -f "$PROJECT_DIR/settings.gradle" ]; then
+            # ------------------------------------------------------
+            # Recursively find the real Gradle project
+            # ------------------------------------------------------
+            SETTINGS_FILE="$(
+              find project -type f \
+                \( -name "settings.gradle.kts" -o -name "settings.gradle" \) \
+                -print -quit
+            )"
 
-              INNER="$(find "$PROJECT_DIR" -mindepth 1 -maxdepth 1 -type d | head -1)"
-
-              if [ -n "$INNER" ] && \
-                 { [ -f "$INNER/settings.gradle.kts" ] || [ -f "$INNER/settings.gradle" ]; }; then
-
-                PROJECT_DIR="$INNER"
-              fi
+            if [ -z "$SETTINGS_FILE" ]; then
+              echo ""
+              echo "ERROR: settings.gradle.kts or settings.gradle was NOT found anywhere inside ZIP."
+              echo ""
+              echo "Top-level extracted folders:"
+              find project -maxdepth 3 -type d -print
+              exit 1
             fi
+
+            PROJECT_DIR="$(dirname "$SETTINGS_FILE")"
+
+            echo ""
+            echo "Gradle settings found:"
+            echo "$SETTINGS_FILE"
+
+            echo ""
+            echo "ANDROID PROJECT DIRECTORY:"
+            echo "$PROJECT_DIR"
           fi
 
+          # --------------------------------------------------------
+          # Export project path
+          # --------------------------------------------------------
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
+          echo ""
           echo "========================================"
-          echo "PROJECT DIRECTORY"
+          echo "VERIFYING PROJECT"
           echo "========================================"
+
+          echo "Project directory:"
           echo "$PROJECT_DIR"
 
           if [ ! -f "$PROJECT_DIR/settings.gradle.kts" ] && \
              [ ! -f "$PROJECT_DIR/settings.gradle" ]; then
-            echo "ERROR: settings.gradle(.kts) not found."
+            echo "ERROR: Gradle settings file not found."
             exit 1
           fi
 
           if [ ! -f "$PROJECT_DIR/app/build.gradle.kts" ] && \
              [ ! -f "$PROJECT_DIR/app/build.gradle" ]; then
-            echo "ERROR: app/build.gradle(.kts) not found."
+            echo "ERROR: app/build.gradle.kts or app/build.gradle not found."
+            echo ""
+            echo "Files near project root:"
+            find "$PROJECT_DIR" -maxdepth 3 -type f | head -100
             exit 1
           fi
 
-
-      # ============================================================
-      # 3. JDK 17
-      # ============================================================
-      - name: Set up JDK 17
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '17'
-          cache: gradle
-
-
-      # ============================================================
-      # 4. ANDROID SDK
-      # ============================================================
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-
-      - name: Install Android SDK packages
-        shell: bash
-        run: |
-          set -e
-
-          yes | sdkmanager --licenses >/dev/null || true
-
-          sdkmanager \
-            "platform-tools" \
-            "platforms;android-36" \
-            "build-tools;36.0.0"
-
-
-      # ============================================================
-      # 5. GRADLE 9.3.1
-      # ============================================================
-      - name: Set up Gradle 9.3.1
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '9.3.1'
-
-
-      # ============================================================
-      # 6. GRADLE CONFIGURATION
-      # ============================================================
-      - name: Configure Gradle
-        shell: bash
-        run: |
-          set -e
-
-          cd "$PROJECT_DIR"
-
-          touch gradle.properties
-
-          cat >> gradle.properties <<'EOF'
-
-          # GitHub Actions CI
-          org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8
-          org.gradle.daemon=false
-          org.gradle.parallel=false
-          org.gradle.configuration-cache=false
-          org.gradle.caching=true
-          org.gradle.workers.max=4
-          kotlin.compiler.execution.strategy=in-process
-          android.useAndroidX=true
-          EOF
-
-          echo "Gradle configuration applied."
-
-
-      # ============================================================
-      # 7. KSP FIX
-      # ============================================================
-      - name: Pin KSP to 2.3.7
-        shell: bash
-        run: |
-          set -e
-
-          cd "$PROJECT_DIR"
-
-          TOML="gradle/libs.versions.toml"
-
-          if [ ! -f "$TOML" ]; then
-            echo "ERROR: libs.versions.toml not found."
-            exit 1
-          fi
-
-          echo "Current KSP version:"
-          grep -n "googleDevtoolsKsp" "$TOML" || true
-
-          sed -i \
-            's/googleDevtoolsKsp[[:space:]]*=[[:space:]]*"2\.3\.5"/googleDevtoolsKsp = "2.3.7"/' \
-            "$TOML"
-
-          echo "KSP after fix:"
-          grep -n "googleDevtoolsKsp" "$TOML" || true
-
-          if ! grep -q 'googleDevtoolsKsp = "2.3.7"' "$TOML"; then
-            echo "ERROR: KSP 2.3.7 was not applied."
-            exit 1
-          fi
-
-
-      # ============================================================
-      # 8. GOOGLE SERVICES
-      # ============================================================
-      - name: Check Google Services
-        shell: bash
-        run: |
-          set -e
-
-          cd "$PROJECT_DIR"
-
-          if [ -f "app/google-services.json" ]; then
-            echo "google-services.json found."
-          else
-            echo "google-services.json not found."
-            echo "Continuing because the project is configured to WARN."
-          fi
-
-
-      # ============================================================
-      # 9. CREATE GRADLE WRAPPER
-      # ============================================================
-      - name: Create Gradle Wrapper if missing
-        shell: bash
-        run: |
-          set -e
-
-          cd "$PROJECT_DIR"
-
-          if [ ! -f "./gradlew" ]; then
-            echo "Gradle wrapper missing."
-            echo "Creating Gradle wrapper..."
-
-            gradle wrapper --gradle-version 9.3.1
-          else
-            echo "Gradle wrapper already exists."
-          fi
-
-          chmod +x ./gradlew
-
-          ./gradlew --version
-
-
-      # ============================================================
-      # 10. CREATE CORRECT DEBUG KEYSTORE
-      # ============================================================
-      - name: Create Debug Keystore
-        shell: bash
-        run: |
-          set -e
-
-          cd "$PROJECT_DIR"
-
-          KEYSTORE="$PROJECT_DIR/debug.keystore"
-
-          echo "========================================"
-          echo "CHECKING DEBUG KEYSTORE"
-          echo "========================================"
-
-          if [ -f "$KEYSTORE" ]; then
-            echo "Debug keystore already exists:"
-            echo "$KEYSTORE"
-
-          else
-            echo "Debug keystore does not exist."
-            echo "Creating it at:"
-            echo "$KEYSTORE"
-
-            keytool -genkeypair \
-              -v \
-              -keystore "$KEYSTORE" \
-              -storepass android \
-              -alias androiddebugkey \
-              -keypass androiddebugkey \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -dname "CN=Android Debug,O=Android,C=US"
-
-            echo "Debug keystore created successfully."
-          fi
-
-          echo "Keystore check:"
-          ls -lh "$KEYSTORE"
-
-          if [ ! -f "$KEYSTORE" ]; then
-            echo "ERROR: debug.keystore was not created."
-            exit 1
-          fi
-
-
-      # ============================================================
-      # 11. VERIFY GRADLE PROJECT
-      # ============================================================
-      - name: Verify Gradle project
-        shell: bash
-        run: |
-          set -e
-
-          cd "$PROJECT_DIR"
-
-          ./gradlew projects \
-            --no-daemon \
-            --no-configuration-cache \
-            --stacktrace
-
-
-      # ============================================================
-      # 12. CLEAN PROJECT
-      # ============================================================
-      - name: Clean project
-        shell: bash
-        run: |
-          set -e
-
-          cd "$PROJECT_DIR"
-
-          ./gradlew clean \
-            --no-daemon \
-            --no-configuration-cache \
-            --stacktrace
-
-
-      # ============================================================
-      # 13. BUILD DEBUG APK
-      # ============================================================
-      - name: Build Debug APK
-        shell: bash
-        run: |
-          set -e
-
-          cd "$PROJECT_DIR"
-
-          echo "========================================"
-          echo "BUILDING DEBUG APK"
-          echo "========================================"
-
-          ./gradlew assembleDebug \
-            --no-daemon \
-            --no-configuration-cache \
-            --stacktrace \
-            --info
-
-
-      # ============================================================
-      # 14. FIND APK
-      # ============================================================
-      - name: Find APK
-        shell: bash
-        run: |
-          set -e
-
-          echo "========================================"
-          echo "SEARCHING FOR APK"
-          echo "========================================"
-
-          find "$PROJECT_DIR" \
-            -type f \
-            -path "*/build/outputs/apk/debug/*.apk" \
-            -print
-
-          APK="$(find "$PROJECT_DIR" \
-            -type f \
-            -path "*/build/outputs/apk/debug/*.apk" \
-            | head -1)"
-
-          if [ -z "$APK" ]; then
-            echo "ERROR: APK was not generated."
-            exit 1
-          fi
-
-          echo "APK FOUND:"
-          echo "$APK"
-
-          echo "APK_PATH=$APK" >> "$GITHUB_ENV"
-
-
-      # ============================================================
-      # 15. UPLOAD APK
-      # ============================================================
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: MVP-ESPORTS-LIVE-debug
-          path: ${{ env.APK_PATH }}
-          if-no-files-found: error
+          echo ""
+          echo "Android project detected successfully."
+
+          echo ""
+          echo "Project root files:"
+          ls -la "$PROJECT_DIR"
