@@ -228,11 +228,22 @@ class BroadcastVideoCompositor private constructor() : IBroadcastCompositor {
 
         // Synchronize with EsportsSceneEngine state (enabling scene graphics overlay for countdowns, breaks, endings)
         sceneObserverJob = scope.launch {
-            com.example.services.scene.EsportsSceneEngine.sceneState.collect { sceneState ->
-                val isLive = sceneState.currentScene == com.example.core.model.EsportsScene.LIVE_MATCH
-                sceneGraphicsOverlay.isEnabled = !isLive
-            }
+    com.example.services.scene.EsportsSceneEngine.sceneState.collect { sceneState ->
+
+        sceneGraphicsOverlay.isEnabled = when (sceneState.currentScene) {
+
+            com.example.core.model.EsportsScene.STARTING_COUNTDOWN,
+            com.example.core.model.EsportsScene.NEXT_MATCH_COUNTDOWN,
+            com.example.core.model.EsportsScene.BREAK,
+            com.example.core.model.EsportsScene.MATCH_ENDED,
+            com.example.core.model.EsportsScene.ENDING -> true
+
+            com.example.core.model.EsportsScene.IDLE,
+            com.example.core.model.EsportsScene.LIVE_MATCH,
+            com.example.core.model.EsportsScene.STOPPED -> false
         }
+    }
+}
 
         // Observe teams state for VIP milestones
         milestoneObserverJob = scope.launch {

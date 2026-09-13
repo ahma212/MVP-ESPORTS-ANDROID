@@ -113,8 +113,18 @@ class FloatingPointerOverlay(private val context: Context) : IFloatingControlSer
             params.flags = params.flags or WindowManager.LayoutParams.FLAG_SECURE
             overlayContainer?.let { container ->
                 if (isAttached) {
-                    windowManager.updateViewLayout(container, params)
-                }
+    try {
+        windowManager.updateViewLayout(
+            root,
+            params
+        )
+    } catch (e: Exception) {
+        Log.w(
+            "FloatingPointer",
+            "Pointer position update failed: ${e.message}"
+        )
+    }
+}
             }
         }
         _controlState.value = _controlState.value.copy(lastPositionX = x, lastPositionY = y)
@@ -827,21 +837,61 @@ class FloatingPointerOverlay(private val context: Context) : IFloatingControlSer
     }
 
     private fun toggleExpand() {
-        val params = currentParams ?: return
-        params.flags = params.flags or WindowManager.LayoutParams.FLAG_SECURE
-        isExpanded = !isExpanded
-        if (isExpanded) {
-            showCategoryMenu()
-            pointerView?.visibility = View.GONE
-            expandedCardView?.visibility = View.VISIBLE
-        } else {
-            expandedCardView?.visibility = View.GONE
-            pointerView?.visibility = View.VISIBLE
-        }
-        if (isAttached && overlayContainer != null) {
-            windowManager.updateViewLayout(overlayContainer, params)
-        }
+    val params = currentParams ?: return
+    val root = overlayContainer ?: return
+
+    if (!isAttached) {
+        return
     }
+
+    try {
+        params.flags =
+            params.flags or WindowManager.LayoutParams.FLAG_SECURE
+
+        isExpanded = !isExpanded
+
+        if (isExpanded) {
+
+            showCategoryMenu()
+
+            pointerView?.visibility =
+                View.GONE
+
+            expandedCardView?.visibility =
+                View.VISIBLE
+
+        } else {
+
+            expandedCardView?.visibility =
+                View.GONE
+
+            pointerView?.visibility =
+                View.VISIBLE
+        }
+
+        windowManager.updateViewLayout(
+            root,
+            params
+        )
+
+    } catch (e: Exception) {
+
+        Log.e(
+            "FloatingPointer",
+            "Pointer expand/collapse failed",
+            e
+        )
+
+        // Recover to the small pointer instead of crashing.
+        isExpanded = false
+
+        expandedCardView?.visibility =
+            View.GONE
+
+        pointerView?.visibility =
+            View.VISIBLE
+    }
+}
 
     private fun updatePointerSizeAndStyle(pointer: FrameLayout) {
         val dpSize = when (pointerSizePreset) {
@@ -4156,11 +4206,31 @@ class FloatingPointerOverlay(private val context: Context) : IFloatingControlSer
                 val active = ScreenCaptureService.isRunning
 
                 // 1. Update Live status views (Tab 1)
-                capStatusVal.text = if (active) "ON" else "OFF"
-                capStatusVal.setTextColor(if (active) Color.parseColor("#FF22C55E") else Color.parseColor("#FFDC2626"))
+                if (::capStatusVal.isInitialized) {
+    capStatusVal.text =
+        if (active) "ON" else "OFF"
 
-                srvStatusVal.text = if (active) "RUNNING" else "STOPPED"
-                srvStatusVal.setTextColor(if (active) Color.parseColor("#FF22C55E") else Color.parseColor("#FFDC2626"))
+    capStatusVal.setTextColor(
+        if (active) {
+            Color.parseColor("#FF22C55E")
+        } else {
+            Color.parseColor("#FFDC2626")
+        }
+    )
+}
+
+                if (::srvStatusVal.isInitialized) {
+    srvStatusVal.text =
+        if (active) "RUNNING" else "STOPPED"
+
+    srvStatusVal.setTextColor(
+        if (active) {
+            Color.parseColor("#FF22C55E")
+        } else {
+            Color.parseColor("#FFDC2626")
+        }
+    )
+}
 
                 // Update Duration
                 val metrics = pipeline.pipelineMetrics.value
@@ -4173,25 +4243,68 @@ class FloatingPointerOverlay(private val context: Context) : IFloatingControlSer
                 }
 
                 // 2. Update Capture Tab values (Tab 3) (Part 12)
-                capStatusTextVal.text = if (active) "ON" else "OFF"
-                capStatusTextVal.setTextColor(if (active) Color.parseColor("#FF22C55E") else Color.parseColor("#FFDC2626"))
+//
+// These views are optional in the floating overlay. Some builds do not
+// create the dedicated capture-detail widgets, so NEVER touch them unless
+// they were actually initialized. This prevents the pointer overlay from
+// crashing immediately after it appears.
 
-                if (service != null && active) {
-                    capResVal.text = "${service.getWidth()} × ${service.getHeight()}"
-                    capFpsVal.text = "${service.getFps()} FPS"
-                    capFrameCountVal.text = String.format("%,d", service.getFrameCount())
-                    capDroppedVal.text = "${service.getDroppedFrames()}"
-                    capProjectionVal.text = "ACTIVE"
-                    capProjectionVal.setTextColor(Color.parseColor("#FF22C55E"))
-                } else {
-                    capResVal.text = "CAPTURE OFF"
-                    capFpsVal.text = "0 FPS"
-                    capFrameCountVal.text = "0"
-                    capDroppedVal.text = "0"
-                    capProjectionVal.text = "INACTIVE"
-                    capProjectionVal.setTextColor(Color.parseColor("#FFDC2626"))
-                }
+if (
+    ::capStatusTextVal.isInitialized &&
+    ::capResVal.isInitialized &&
+    ::capFpsVal.isInitialized &&
+    ::capFrameCountVal.isInitialized &&
+    ::capDroppedVal.isInitialized &&
+    ::capProjectionVal.isInitialized
+) {
+    capStatusTextVal.text = if (active) "ON" else "OFF"
 
+    capStatusTextVal.setTextColor(
+        if (active) {
+            Color.parseColor("#FF22C55E")
+        } else {
+            Color.parseColor("#FFDC2626")
+        }
+    )
+
+    if (service != null && active) {
+
+        capResVal.text =
+            "${service.getWidth()} × ${service.getHeight()}"
+
+        capFpsVal.text =
+            "${service.getFps()} FPS"
+
+        capFrameCountVal.text =
+            String.format(
+                Locale.US,
+                "%,d",
+                service.getFrameCount()
+            )
+
+        capDroppedVal.text =
+            "${service.getDroppedFrames()}"
+
+        capProjectionVal.text =
+            "ACTIVE"
+
+        capProjectionVal.setTextColor(
+            Color.parseColor("#FF22C55E")
+        )
+
+    } else {
+
+        capResVal.text = "CAPTURE OFF"
+        capFpsVal.text = "0 FPS"
+        capFrameCountVal.text = "0"
+        capDroppedVal.text = "0"
+        capProjectionVal.text = "INACTIVE"
+
+        capProjectionVal.setTextColor(
+            Color.parseColor("#FFDC2626")
+        )
+    }
+}
                 // 3. Update Monitor Tab values (Tab 4) (Part 13)
                 val bState = broadcastController.broadcastState.value
                 val ytState = youtubeService.sessionState.value

@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.sp
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import com.example.services.audio.AudioMixerManager
+import com.example.core.model.TeamLiveState
 import com.example.services.audio.LocalMusicPlayerManager
 import com.example.services.composition.ComposedBroadcastFrame
 import com.example.services.station.*
@@ -245,6 +246,93 @@ fun StationControlRoomCard(
                     color = MvpTextMuted
                 )
             }
+            // --- LIVE BROADCAST STANDINGS ---
+// Same Supabase leaderboard data used by the broadcast compositor.
+// This is display-only: Supabase remains the source of truth.
+Column(
+    modifier = Modifier
+        .fillMaxWidth()
+        .clip(RoundedCornerShape(12.dp))
+        .background(Color(0xFF070B14))
+        .border(
+            1.dp,
+            MvpCyanBorder,
+            RoundedCornerShape(12.dp)
+        )
+        .padding(10.dp),
+    verticalArrangement = Arrangement.spacedBy(8.dp)
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column {
+            Text(
+                text = "LIVE BROADCAST STANDINGS",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.SansSerif,
+                color = MvpTextTitle
+            )
+
+            Text(
+                text = when (supabaseConnState) {
+                    is SupabaseConnectionState.Connected ->
+                        "Supabase Realtime • synced"
+
+                    is SupabaseConnectionState.Connecting ->
+                        "Supabase Realtime • connecting"
+
+                    is SupabaseConnectionState.SyncError ->
+                        "Supabase Realtime • sync error"
+
+                    is SupabaseConnectionState.NotConnected ->
+                        "Supabase Realtime • offline"
+                },
+                fontSize = 9.sp,
+                fontFamily = FontFamily.SansSerif,
+                color = when (supabaseConnState) {
+                    is SupabaseConnectionState.Connected ->
+                        MvpSuccess
+
+                    else ->
+                        MvpTextMuted
+                }
+            )
+        }
+
+        Text(
+            text = "${supabaseTeams.size} TEAMS",
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.SansSerif,
+            color = MvpCyanPrimary
+        )
+    }
+
+    val standingTeams =
+        remember(supabaseTeams) {
+            supabaseTeams.map { entry ->
+                com.example.core.model.TeamLiveState(
+                    teamNumber = entry.slotNumber,
+                    teamName = entry.teamName,
+                    currentMatchKills = entry.killPoints,
+                    currentMatchPoints = entry.totalPoints,
+                    currentAlivePlayers = entry.alivePlayers,
+                    rank = entry.rank,
+                    players = emptyList(),
+                    isEliminated = entry.alivePlayers <= 0
+                )
+            }
+        }
+
+    EsportsStandingTable(
+        teams = standingTeams,
+        modifier = Modifier.fillMaxWidth(),
+        isStreamOverlay = true
+    )
+}
         }
 
         // Video Source Selector & Meme Controller inside Station Desk
@@ -622,7 +710,11 @@ fun StationControlRoomCard(
                     fontFamily = FontFamily.SansSerif,
                     color = MvpTextSubtitle
                 )
-                listOf(StationFps.FPS_24, StationFps.FPS_30).forEach { fps ->
+                listOf(
+    StationFps.FPS_24,
+    StationFps.FPS_30,
+    StationFps.FPS_60
+).forEach { fps ->
                     val isSelected = stationState.fps == fps
                     FilterChip(
                         selected = isSelected,

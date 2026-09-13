@@ -9,6 +9,10 @@ import android.os.Build
 import android.os.Environment
 import android.os.SystemClock
 import android.util.Log
+import android.content.ContentValues
+import android.net.Uri
+import android.os.ParcelFileDescriptor
+import android.provider.MediaStore
 import com.example.services.composition.BroadcastVideoCompositor
 import com.example.services.composition.ComposedBroadcastFrame
 import com.example.services.station.StationDeskManager
@@ -60,8 +64,11 @@ class BroadcastRecordingManager private constructor() {
     private var durationJob: Job? = null
     private val recordingEncoder = MediaCodecVideoEncoder()
     private var mediaMuxer: MediaMuxer? = null
-    private var videoTrackIndex = -1
-    private var muxerStarted = false
+private var videoTrackIndex = -1
+private var muxerStarted = false
+
+private var pendingVideoUri: Uri? = null
+private var pendingVideoPfd: ParcelFileDescriptor? = null
 
     // Bounded queue: max 2 frames, drops oldest if encoder is busy
     private var frameChannel: Channel<ComposedBroadcastFrame>? = null
@@ -167,45 +174,154 @@ class BroadcastRecordingManager private constructor() {
 
         return try {
             appContext = context.applicationContext
-            val moviesPublicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
-            val esportsDir = File(moviesPublicDir, "MVP-Esports")
-            if (!esportsDir.exists()) {
-                esportsDir.mkdirs()
-            }
-            val targetDir = if (esportsDir.exists() && esportsDir.canWrite()) {
-                esportsDir
-            } else {
-                val fallback = File(context.getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: context.filesDir, "MVP-Esports")
-                fallback.mkdirs()
-                fallback
-            }
-            val file = File(targetDir, "MVP_STATION_${System.currentTimeMillis()}.mp4")
-            currentOutputFile = file
+            val displayName =
+    "MVP_STATION_${System.currentTimeMillis()}.mp4"
 
-            muxerStarted = false
+muxerStarted = false
 videoTrackIndex = -1
 mediaMuxer = null
 
-val configRes = recordingEncoder.configureEncoder(width, height, bitrate, fps)
+pendingVideoUri = null
+pendingVideoPfd = null
+
+val configRes =
+    recordingEncoder.configureEncoder(
+        width,
+        height,
+        bitrate,
+        fps
+    )
 
 if (configRes.isFailure) {
+
     _recordingError.value =
-        configRes.exceptionOrNull()?.message ?: "Encoder configuration failed"
+        configRes.exceptionOrNull()?.message
+            ?: "Encoder configuration failed"
 
     recordingEncoder.stopEncoder()
 
     return Result.failure(
         configRes.exceptionOrNull()
-            ?: IllegalStateException("Encoder configuration failed")
+            ?: IllegalStateException(
+                "Encoder configuration failed"
+            )
     )
 }
 
-// Encoder successfully configured BEFORE creating MediaMuxer.
-mediaMuxer = MediaMuxer(
-    file.absolutePath,
-    MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4
-)
+if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
 
+    val resolver = context.contentResolver
+
+    val values = ContentValues().apply {
+
+        put(
+            MediaStore.Video.Media.DISPLAY_NAME,
+            displayName
+        )
+
+        put(
+            MediaStore.Video.Media.MIME_TYPE,
+            "video/mp4"
+        )
+
+        put(
+            MediaStore.Video.Media.RELATIVE_PATH,
+            Environment.DIRECTORY_MOVIES +
+                "/MVP-Esports"
+        )
+
+        put(
+            MediaStore.Video.Media.IS_PENDING,
+            1
+        )
+    }
+
+    val collection =
+        MediaStore.Video.Media.getContentUri(
+            MediaStore.VOLUME_EXTERNAL_PRIMARY
+        )
+
+    val uri =
+        resolver.insert(collection, values)
+            ?: throw IllegalStateException(
+                "MediaStore video insert failed"
+            )
+
+    val pfd =
+        resolver.openFileDescriptor(
+            uri,
+            "rw"
+        )
+            ?: throw IllegalStateException(
+                "MediaStore file descriptor failed"
+            )
+
+    pendingVideoUri = uri
+    pendingVideoPfd = pfd
+
+    mediaMuxer =
+        MediaMuxer(
+            pfd.fileDescriptor,
+            MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4
+        )
+
+    // File object is only used for UI/file-name state.
+    currentOutputFile =
+        File(
+            context.cacheDir,
+            displayName
+        )
+
+} else {
+
+    val moviesPublicDir =
+        Environment.getExternalStoragePublicDirectory(
+            Environment.DIRECTORY_MOVIES
+        )
+
+    val esportsDir =
+        File(
+            moviesPublicDir,
+            "MVP-Esports"
+        )
+
+    if (!esportsDir.exists()) {
+        esportsDir.mkdirs()
+    }
+
+    val targetDir =
+        if (
+            esportsDir.exists() &&
+            esportsDir.canWrite()
+        ) {
+            esportsDir
+        } else {
+            val fallback =
+                File(
+                    context.getExternalFilesDir(
+                        Environment.DIRECTORY_MOVIES
+                    ) ?: context.filesDir,
+                    "MVP-Esports"
+                )
+
+            fallback.mkdirs()
+            fallback
+        }
+
+    val file =
+        File(
+            targetDir,
+            displayName
+        )
+
+    currentOutputFile = file
+
+    mediaMuxer =
+        MediaMuxer(
+            file.absolutePath,
+            MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4
+        )
+}
             recordingStartTimeMs = SystemClock.elapsedRealtime()
             _isRecording.value = true
             _recordingDurationSeconds.value = 0L
@@ -228,20 +344,49 @@ mediaMuxer = MediaMuxer(
                 recordingEncoder.encodedFrames.collect { encodedFrame ->
                     if (!_isRecording.value) return@collect
                     
-                    if (encodedFrame.isCodecConfig && !muxerStarted) {
-    val format = recordingEncoder.getOutputFormat()
+                    if (
+    encodedFrame.isCodecConfig &&
+    !muxerStarted
+) {
+    val format =
+        recordingEncoder.getOutputFormat()
 
-    if (format != null && mediaMuxer != null) {
+    if (
+        format != null &&
+        mediaMuxer != null
+    ) {
         try {
-            videoTrackIndex = mediaMuxer!!.addTrack(format)
-            mediaMuxer!!.start()
-            muxerStarted = true
 
-            Log.i(
-                TAG,
-                "MediaMuxer started successfully. Track=$videoTrackIndex"
-            )
+            // MP4 AVC track requires codec-specific data
+            // from the ACTUAL MediaCodec output format.
+            val hasCodecConfig =
+                format.containsKey("csd-0") &&
+                format.containsKey("csd-1")
+
+            if (!hasCodecConfig) {
+                Log.w(
+                    TAG,
+                    "Waiting for AVC codec config (csd-0/csd-1)"
+                )
+            } else {
+
+                videoTrackIndex =
+                    mediaMuxer!!.addTrack(format)
+
+                mediaMuxer!!.start()
+
+                muxerStarted = true
+
+                Log.i(
+                    TAG,
+                    "MP4 muxer started: " +
+                        "${format.getInteger(MediaFormat.KEY_WIDTH)}x" +
+                        "${format.getInteger(MediaFormat.KEY_HEIGHT)}"
+                )
+            }
+
         } catch (e: Exception) {
+
             Log.e(
                 TAG,
                 "MediaMuxer start failed",
@@ -249,7 +394,8 @@ mediaMuxer = MediaMuxer(
             )
 
             _recordingError.value =
-                e.message ?: "MediaMuxer start failed"
+                e.message
+                    ?: "MediaMuxer start failed"
 
             _isRecording.value = false
         }
@@ -331,34 +477,108 @@ mediaMuxer = MediaMuxer(
             if (muxerStarted) {
                 mediaMuxer?.stop()
             }
-            mediaMuxer?.release()
-            mediaMuxer = null
-            muxerStarted = false
+            try {
+    if (muxerStarted) {
+        mediaMuxer?.stop()
+    }
+} catch (e: Exception) {
+    Log.w(
+        TAG,
+        "Muxer stop warning: ${e.message}"
+    )
+}
 
-            StationDeskManager.updateRecordingState(
-                isRecording = false,
-                durationSeconds = lastDur,
-                fileName = lastFile?.name,
-                filePath = lastFile?.absolutePath
-            )
+try {
+    mediaMuxer?.release()
+} catch (e: Exception) {
+    Log.w(
+        TAG,
+        "Muxer release warning: ${e.message}"
+    )
+}
 
-            // Scan into phone Gallery
-            if (lastFile != null && lastFile.exists()) {
-                appContext?.let { ctx ->
-                    try {
-                        MediaScannerConnection.scanFile(
-                            ctx,
-                            arrayOf(lastFile.absolutePath),
-                            arrayOf("video/mp4")
-                        ) { path, uri ->
-                            Log.i(TAG, "MP4 scanned into Gallery: $path -> $uri")
-                        }
-                    } catch (ex: Exception) {
-                        Log.w(TAG, "Failed to trigger media scan: ${ex.message}")
-                    }
-                }
+mediaMuxer = null
+muxerStarted = false
+
+// Publish the MediaStore video only AFTER the MP4 has
+// been completely finalized.
+if (
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+    pendingVideoUri != null
+) {
+    try {
+
+        pendingVideoPfd?.close()
+        pendingVideoPfd = null
+
+        val values =
+            ContentValues().apply {
+                put(
+                    MediaStore.Video.Media.IS_PENDING,
+                    0
+                )
             }
 
+        appContext?.contentResolver?.update(
+            pendingVideoUri!!,
+            values,
+            null,
+            null
+        )
+
+        Log.i(
+            TAG,
+            "Video published to Gallery: $pendingVideoUri"
+        )
+
+    } catch (e: Exception) {
+
+        Log.e(
+            TAG,
+            "Failed to publish video to Gallery",
+            e
+        )
+    }
+}
+
+StationDeskManager.updateRecordingState(
+    isRecording = false,
+    durationSeconds = lastDur,
+    fileName = lastFile?.name,
+    filePath =
+        pendingVideoUri?.toString()
+            ?: lastFile?.absolutePath
+)
+
+// Pre-Android 10 fallback.
+if (
+    Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+    lastFile != null &&
+    lastFile.exists()
+) {
+    appContext?.let { ctx ->
+        try {
+            MediaScannerConnection.scanFile(
+                ctx,
+                arrayOf(lastFile.absolutePath),
+                arrayOf("video/mp4")
+            ) { path, uri ->
+                Log.i(
+                    TAG,
+                    "MP4 scanned into Gallery: " +
+                        "$path -> $uri"
+                )
+            }
+        } catch (e: Exception) {
+            Log.w(
+                TAG,
+                "Media scan failed: ${e.message}"
+            )
+        }
+    }
+}
+
+pendingVideoUri = null
             _fileCreationStatus.value = "SAVED: ${lastFile?.name}"
             Log.i(TAG, "Local broadcast recording saved: ${lastFile?.absolutePath}")
             Result.success(Unit)

@@ -153,45 +153,38 @@ fun RealDetectionInspectorCard(
             }
         }
 
-        // Cropped Active ROI Viewport (Cropped Kill-Feed Only)
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Text(
-                text = "CROPPED ROI (${inspectionState.activeRoi.name})",
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Bold,
-                fontFamily = FontFamily.Monospace,
-                color = HighDensityOrange
-            )
+        // Cropped ROI video is intentionally NOT rendered here.
+// The single dedicated cropped preview remains in RoiEditorCard.
+// This inspector only shows detection/telemetry data so it does not
+// create another continuously-updating video render.
 
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(16f / 9f)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(Color(0xFF0F0B08))
-                    .border(1.dp, HighDensityOrange.copy(alpha = 0.5f), RoundedCornerShape(4.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                if (croppedRoiBitmap != null) {
-                    Image(
-                        bitmap = croppedRoiBitmap,
-                        contentDescription = "Cropped ROI Preview",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                } else {
-                    Text(
-                        text = "NO ROI CROP",
-                        fontSize = 8.sp,
-                        fontFamily = FontFamily.Monospace,
-                        color = HighDensityTextMuted
-                    )
-                }
-            }
-        }
+Column(
+    modifier = Modifier
+        .fillMaxWidth()
+        .clip(RoundedCornerShape(4.dp))
+        .background(HighDensitySurfaceVariant)
+        .border(
+            1.dp,
+            HighDensityBorder,
+            RoundedCornerShape(4.dp)
+        )
+        .padding(10.dp)
+    ) {
+    Text(
+        text = "ROI VIDEO PREVIEW: SINGLE SOURCE",
+        fontSize = 9.sp,
+        fontWeight = FontWeight.Bold,
+        fontFamily = FontFamily.Monospace,
+        color = HighDensityOrange
+    )
+
+    Text(
+        text = "Cropped detector preview is shown in the ROI Editor only.",
+        fontSize = 8.sp,
+        fontFamily = FontFamily.Monospace,
+        color = HighDensityTextMuted
+    )
+}
 
         // Live Intermediate Parsing Readout
         Column(

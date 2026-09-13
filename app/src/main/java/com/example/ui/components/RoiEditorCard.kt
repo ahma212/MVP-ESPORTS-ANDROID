@@ -535,28 +535,24 @@ fun RoiEditorCard(
             val currentImgW = rememberUpdatedState(displayedImgWidth)
             val currentImgH = rememberUpdatedState(displayedImgHeight)
 
-            // Display Live Captured Image
-            val displayBmp = croppedBitmap ?: frameBitmap
-            if (displayBmp != null) {
-                Image(
-                    bitmap = displayBmp,
-                    contentDescription = "Live Screen Frame Stream (Crop Viewport)",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-            } else {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "START CAPTURE TO VIEW REAL SCREEN FEED",
-                        fontSize = 10.sp,
-                        fontFamily = FontFamily.Monospace,
-                        color = HighDensityTextMuted
-                    )
-                }
-            }
+            // ROI editor uses the frame only for ROI geometry/interaction.
+// Do NOT render another live video surface here.
+// The dedicated cropped ROI preview below is the only video preview
+// retained for the AI/ROI section.
+
+Box(
+    modifier = Modifier
+        .fillMaxSize()
+        .background(Color(0xFF0A0A0C)),
+    contentAlignment = Alignment.Center
+) {
+    Text(
+        text = "ROI AREA • CROPPED PREVIEW BELOW",
+        fontSize = 10.sp,
+        fontFamily = FontFamily.Monospace,
+        color = HighDensityTextMuted
+    )
+}
 
             // Draw ROI Box, Letterbox Dimming & Resize Handles
             Canvas(modifier = Modifier.fillMaxSize()) {

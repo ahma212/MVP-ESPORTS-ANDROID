@@ -318,24 +318,41 @@ object StationDeskManager {
     }
 
     fun triggerAutoDowngrade() {
-        _stationState.update {
-            if (it.smoothnessMode == SmoothnessMode.QUALITY) {
-                // First downgrade: 1080p60 -> 1080p30
-                if (it.fps == StationFps.FPS_60) {
-                    it.copy(fps = StationFps.FPS_30, autoDowngraded = true)
-                } else {
-                    // Second downgrade: 1080p30 -> 720p30 PERFORMANCE
-                    it.copy(
-                        smoothnessMode = SmoothnessMode.PERFORMANCE,
-                        resolution = StationResolution.RES_720P,
-                        fps = StationFps.FPS_30,
-                        quality = StationQuality.MEDIUM,
-                        autoDowngraded = true
-                    )
-                }
+    _stationState.update { state ->
+
+        // Never change a user's selected recording profile
+        // while an active recording is running.
+        if (state.isRecording) {
+            state
+        } else if (
+            state.smoothnessMode == SmoothnessMode.QUALITY
+        ) {
+
+            if (state.fps == StationFps.FPS_60) {
+
+                state.copy(
+                    fps = StationFps.FPS_30,
+                    autoDowngraded = true
+                )
+
             } else {
-                it
+
+                state.copy(
+                    smoothnessMode =
+                        SmoothnessMode.PERFORMANCE,
+                    resolution =
+                        StationResolution.RES_720P,
+                    fps =
+                        StationFps.FPS_30,
+                    quality =
+                        StationQuality.MEDIUM,
+                    autoDowngraded = true
+                )
             }
+
+        } else {
+            state
         }
     }
+}
 }

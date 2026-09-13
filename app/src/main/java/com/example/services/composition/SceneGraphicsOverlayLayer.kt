@@ -64,9 +64,13 @@ class SceneGraphicsOverlayLayer(
         val currentScene = sceneState.currentScene
 
         // Only draw dedicated scene graphics for non-live match states (Countdown, Break, Match Ended, Ending, Idle)
-        if (currentScene == EsportsScene.LIVE_MATCH || currentScene == EsportsScene.STOPPED) {
-            return
-        }
+        if (
+    currentScene == EsportsScene.IDLE ||
+    currentScene == EsportsScene.LIVE_MATCH ||
+    currentScene == EsportsScene.STOPPED
+) {
+    return
+}
 
         // Semi-transparent professional studio backdrop overlay
         bgPaint.color = Color.argb(220, 10, 10, 15)
@@ -143,11 +147,28 @@ class SceneGraphicsOverlayLayer(
             timerPaint.textSize = 36f * scale
             timerPaint.color = Color.parseColor("#FFFFFF")
             val statusStr = when (currentScene) {
-                EsportsScene.MATCH_ENDED -> "STANDINGS LOCKED • PREPARING NEXT ROUND"
-                EsportsScene.ENDING -> "THANK YOU FOR WATCHING MVP ESPORTS"
-                else -> "READY FOR OPERATOR LAUNCH"
-            }
-            canvas.drawText(statusStr, cx, cardTop + headerHeight + (160f * scale), timerPaint)
+    EsportsScene.MATCH_ENDED ->
+        "STANDINGS LOCKED • PREPARING NEXT ROUND"
+
+    EsportsScene.ENDING ->
+        "THANK YOU FOR WATCHING MVP ESPORTS"
+
+    EsportsScene.STARTING_COUNTDOWN,
+    EsportsScene.NEXT_MATCH_COUNTDOWN,
+    EsportsScene.BREAK ->
+        ""
+
+    else ->
+        ""
+}
+            if (statusStr.isNotBlank()) {
+    canvas.drawText(
+        statusStr,
+        cx,
+        cardTop + headerHeight + (160f * scale),
+        timerPaint
+    )
+}
         }
 
         // Footer Branding

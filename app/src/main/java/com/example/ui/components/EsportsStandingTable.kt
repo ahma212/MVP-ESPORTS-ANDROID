@@ -5,10 +5,18 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Surface
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
@@ -59,90 +67,151 @@ fun EsportsStandingTable(
     }
 
     Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(MvpCardGlass)
-            .border(1.dp, MvpCyanBorder, RoundedCornerShape(14.dp))
-            .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        // --- 1. VIP Header & Stats Banner ---
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Icon(
-                        imageVector = Icons.Default.Star,
-                        contentDescription = null,
-                        tint = MvpCyanPrimary,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Text(
-                        text = "VIP Leaderboard",
-                        color = MvpTextTitle,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.SansSerif
-                    )
-                }
-                Text(
-                    text = "Live tournament standings",
-                    color = MvpTextSubtitle,
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.SansSerif
+    modifier = modifier
+        .fillMaxWidth()
+        .clip(RoundedCornerShape(16.dp))
+        .background(
+            Brush.verticalGradient(
+                listOf(
+                    Color(0xFF101A31),
+                    Color(0xFF08101F),
+                    Color(0xFF050A14)
                 )
-            }
+            )
+        )
+        .border(
+            1.dp,
+            MvpCyanPrimary.copy(alpha = 0.55f),
+            RoundedCornerShape(16.dp)
+        )
+        .padding(12.dp),
+    verticalArrangement = Arrangement.spacedBy(8.dp)
+) {
+        // --- 1. VIP Header & Stats Banner ---
+       Row(
+    modifier = Modifier
+        .fillMaxWidth()
+        .clip(RoundedCornerShape(12.dp))
+        .background(
+            Brush.horizontalGradient(
+                listOf(
+                    Color(0xFF111D38),
+                    Color(0xFF0A1327),
+                    Color(0xFF160D16)
+                )
+            )
+        )
+        .border(
+            1.dp,
+            MvpCyanPrimary.copy(alpha = 0.30f),
+            RoundedCornerShape(12.dp)
+        )
+        .padding(horizontal = 12.dp, vertical = 10.dp),
+    horizontalArrangement = Arrangement.SpaceBetween,
+    verticalAlignment = Alignment.CenterVertically
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(9.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(9.dp)
+                .clip(CircleShape)
+                .background(Color(0xFFFF1744))
+        )
 
-            // Summary Badges
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Surface(
-                    color = MvpSuccessDim,
-                    shape = RoundedCornerShape(20.dp),
-                    border = BorderStroke(1.dp, MvpSuccess.copy(alpha = 0.5f))
-                ) {
-                    Text(
-                        text = "$totalAlive ALIVE",
-                        color = MvpSuccess,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.SansSerif,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                    )
-                }
+        Column(
+            verticalArrangement = Arrangement.spacedBy(1.dp)
+        ) {
+            Text(
+                text = "MVP ESPORTS",
+                color = Color(0xFFFFD54A),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.SansSerif
+            )
 
-                Surface(
-                    color = MvpCyanDim,
-                    shape = RoundedCornerShape(20.dp),
-                    border = BorderStroke(1.dp, MvpCyanPrimary.copy(alpha = 0.5f))
-                ) {
-                    Text(
-                        text = "$activeTeamsCount TEAMS",
-                        color = MvpCyanPrimary,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.SansSerif,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                    )
-                }
-            }
+            Text(
+                text = "VIP LIVE STANDINGS",
+                color = MvpCyanPrimary,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.SansSerif
+            )
         }
+    }
+
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+        Surface(
+            color = Color(0x3322C55E),
+            shape = RoundedCornerShape(20.dp),
+            border = BorderStroke(
+                1.dp,
+                Color(0xFF22C55E).copy(alpha = 0.65f)
+            )
+        ) {
+            Text(
+                text = "$totalAlive ALIVE",
+                color = Color(0xFF4ADE80),
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(
+                    horizontal = 8.dp,
+                    vertical = 4.dp
+                )
+            )
+        }
+
+        Surface(
+            color = Color(0x3329B6F6),
+            shape = RoundedCornerShape(20.dp),
+            border = BorderStroke(
+                1.dp,
+                MvpCyanPrimary.copy(alpha = 0.65f)
+            )
+        ) {
+            Text(
+                text = "$activeTeamsCount TEAMS",
+                color = Color(0xFF67E8F9),
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(
+                    horizontal = 8.dp,
+                    vertical = 4.dp
+                )
+            )
+        }
+    }
+}
 
         // --- 2. Table Header Row (# TEAM ALIVE KILLS PTS) ---
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(8.dp))
-                .background(MvpCardGlassVariant)
-                .padding(horizontal = 10.dp, vertical = 8.dp),
+    modifier = Modifier
+        .fillMaxWidth()
+        .clip(RoundedCornerShape(8.dp))
+        .background(
+            Brush.horizontalGradient(
+                listOf(
+                    Color(0xFF102A45),
+                    Color(0xFF0B1A31),
+                    Color(0xFF24111B)
+                )
+            )
+        )
+        .border(
+            1.dp,
+            MvpCyanPrimary.copy(alpha = 0.28f),
+            RoundedCornerShape(8.dp)
+        )
+        .padding(horizontal = 10.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 text = "#",
-                color = MvpTextMuted,
+                color = Color(0xFF7DD3FC)
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.SansSerif,
@@ -211,7 +280,10 @@ fun EsportsStandingTable(
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = if (isStreamOverlay) 420.dp else 540.dp),
+                   .heightIn(
+    min = 120.dp,
+    max = if (isStreamOverlay) 420.dp else 540.dp
+),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 items(sortedTeams, key = { it.teamNumber }) { team ->
@@ -255,9 +327,9 @@ private fun EsportsStandingRow(
 
     val rowBgColor = when {
         isTeamEliminated -> MvpEliminatedBg
-        team.rank == 1 -> Color(0x1AFFD700)
-        team.rank == 2 -> Color(0x1AE2E8F0)
-        team.rank == 3 -> Color(0x1ACD7F32)
+        team.rank == 1 -> Color(0x35FFD700)
+        team.rank == 2 -> Color(0x2529B6F6)
+        team.rank == 3 -> Color(0x2522D3EE)
         else -> MvpCardGlassVariant
     }
 
@@ -299,7 +371,10 @@ private fun EsportsStandingRow(
         ) {
             Text(
                 text = "#${team.rank}",
-                color = if (isTeamEliminated) MvpEliminatedGrey else rankAccentColor,
+                color = if (isTeamEliminated)
+    MvpEliminatedGrey
+else
+    Color(0xFFFFD54A), rankAccentColor,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.SansSerif

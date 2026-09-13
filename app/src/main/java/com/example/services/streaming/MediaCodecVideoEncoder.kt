@@ -1,10 +1,14 @@
 package com.example.services.streaming
 
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Rect
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
 import android.util.Log
+import android.view.Surface
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -25,6 +29,11 @@ class MediaCodecVideoEncoder : IVideoEncoder {
     }
 
     private var mediaCodec: MediaCodec? = null
+
+private var inputSurface: Surface? = null
+
+private val surfacePaint =
+    Paint(Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
 
     override var isRunning: Boolean = false
         private set
@@ -91,64 +100,86 @@ class MediaCodecVideoEncoder : IVideoEncoder {
             // Release any existing encoder instance first
             stopEncoder()
 
-            // Safe capabilities-based color format selection
-            val colorFormatToUse = colorFormatOverride ?: try {
-                val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
-                val capabilities = codec.codecInfo.getCapabilitiesForType(MediaFormat.MIMETYPE_VIDEO_AVC)
-                val supportedFormats = capabilities.colorFormats
-                when {
-                    supportedFormats.contains(MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar) ->
-                        MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar
-                    supportedFormats.contains(MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar) ->
-                        MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar
-                    else -> {
-                        if (supportedFormats.contains(MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)) {
-                            MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar
-                        } else {
-                            throw IllegalArgumentException("No recognized YUV420 hardware color format supported by device")
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                if (e is IllegalArgumentException) {
-                    throw e
-                }
-                MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar
-            }
+            // HARDWARE SURFACE INPUT
+// Removes the expensive CPU Bitmap -> YUV420 conversion on every frame.
+val format = MediaFormat.createVideoFormat(
+    MediaFormat.MIMETYPE_VIDEO_AVC,
+    width,
+    height
+).apply {
+    setInteger(
+        MediaFormat.KEY_COLOR_FORMAT,
+        MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface
+    )
 
-            // Verify that the color format is supported by our converter
-            if (colorFormatToUse != MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar &&
-                colorFormatToUse != MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar) {
-                throw IllegalArgumentException("Unsupported encoder color format: $colorFormatToUse")
-            }
+    setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
 
-            selectedColorFormat = colorFormatToUse
+    setInteger(MediaFormat.KEY_FRAME_RATE, fps)
 
-            val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height).apply {
-                setInteger(MediaFormat.KEY_COLOR_FORMAT, colorFormatToUse)
-                setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
-                setInteger(MediaFormat.KEY_FRAME_RATE, fps)
-                setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1) // 1-second keyframe interval for responsive live streaming
-                try {
-                    setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
-                } catch (_: Exception) {}
-            }
+    // 2-second keyframe interval.
+    setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 2)
 
-            try {
-                val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
-                codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-                codec.start()
-                mediaCodec = codec
-                isHardwareCodec = true
-            } catch (e: Exception) {
-                Log.e(TAG, "Hardware MediaCodec initialization failed: ${e.message}", e)
-                mediaCodec = null
-                isHardwareCodec = false
-                isRunning = false
-                return Result.failure(e)
-            }
+    try {
+        setInteger(
+            MediaFormat.KEY_BITRATE_MODE,
+            MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR
+        )
+    } catch (_: Exception) {
+        // Some hardware encoders do not expose this key.
+    }
+}
 
-            lastOutputFormat = format
+try {
+    val codec =
+        MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+
+    codec.configure(
+        format,
+        null,
+        null,
+        MediaCodec.CONFIGURE_FLAG_ENCODE
+    )
+
+    // Hardware encoder Surface.
+    val surface = codec.createInputSurface()
+
+    codec.start()
+
+    mediaCodec = codec
+    inputSurface = surface
+    isHardwareCodec = true
+
+} catch (e: Exception) {
+
+    Log.e(
+        TAG,
+        "Hardware Surface MediaCodec initialization failed: ${e.message}",
+        e
+    )
+
+    try {
+        mediaCodec?.release()
+    } catch (_: Exception) {
+    }
+
+    mediaCodec = null
+
+    try {
+        inputSurface?.release()
+    } catch (_: Exception) {
+    }
+
+    inputSurface = null
+    isHardwareCodec = false
+    isRunning = false
+
+    return Result.failure(e)
+}
+
+// DO NOT use the requested input format for MediaMuxer.
+// We will replace this only after MediaCodec reports
+// INFO_OUTPUT_FORMAT_CHANGED.
+lastOutputFormat = null
             isRunning = true
             frameCount = 0L
             totalBytesEncoded = 0L
@@ -197,26 +228,48 @@ class MediaCodecVideoEncoder : IVideoEncoder {
     private fun encodeHardwareFrame(bitmap: Bitmap, presentationTimeUs: Long): ByteArray {
         val codec = mediaCodec ?: return ByteArray(0)
 
-        // 1. Input Frame Handling: Convert Bitmap to YUV420 format byte array based on selected format
-        val yuvData = bitmapToYuv420(bitmap, currentWidth, currentHeight, selectedColorFormat)
+        // HARDWARE SURFACE INPUT
+// No CPU ARGB -> YUV420 conversion.
+val surface = inputSurface
+    ?: return ByteArray(0)
 
-        val inputBufferIndex = codec.dequeueInputBuffer(TIMEOUT_US)
-        if (inputBufferIndex >= 0) {
-            val inputBuffer = codec.getInputBuffer(inputBufferIndex)
-            inputBuffer?.let {
-                it.clear()
-                val bytesToWrite = minOf(yuvData.size, it.remaining())
-                it.put(yuvData, 0, bytesToWrite)
-                codec.queueInputBuffer(inputBufferIndex, 0, bytesToWrite, presentationTimeUs, 0)
-            }
-        }
+val canvas: Canvas = surface.lockHardwareCanvas()
+
+try {
+    canvas.drawColor(android.graphics.Color.BLACK)
+
+    val sourceRect = Rect(
+        0,
+        0,
+        bitmap.width,
+        bitmap.height
+    )
+
+    val destinationRect = Rect(
+        0,
+        0,
+        currentWidth,
+        currentHeight
+    )
+
+    canvas.drawBitmap(
+        bitmap,
+        sourceRect,
+        destinationRect,
+        surfacePaint
+    )
+
+} finally {
+    surface.unlockCanvasAndPost(canvas)
+}
 
         // 2. Output Packet Handling: Drain all available encoded output buffers
         val bufferInfo = MediaCodec.BufferInfo()
         val outputStream = ByteArrayOutputStream()
         var isKeyFrame = false
 
-        var outputBufferIndex = codec.dequeueOutputBuffer(bufferInfo, TIMEOUT_US)
+        var outputBufferIndex =
+    codec.dequeueOutputBuffer(bufferInfo, 0L)
         while (outputBufferIndex >= 0 || outputBufferIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
             if (outputBufferIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
                 val newFormat = codec.outputFormat
@@ -237,13 +290,13 @@ class MediaCodecVideoEncoder : IVideoEncoder {
                         spsPpsHeader = configRecord
                         _encodedFrames.tryEmit(
                             EncodedVideoFrame(
-                                data = configRecord,
-                                presentationTimeUs = 0L,
-                                isKeyFrame = true,
-                                isCodecConfig = true,
-                                width = currentWidth,
-                                height = currentHeight
-                            )
+    data = resultBytes,
+    presentationTimeUs = bufferInfo.presentationTimeUs,
+    isKeyFrame = isKeyFrame,
+    isCodecConfig = false,
+    width = currentWidth,
+    height = currentHeight
+)
                         )
                     }
                 }
@@ -347,13 +400,10 @@ class MediaCodecVideoEncoder : IVideoEncoder {
         try {
             isRunning = false
             mediaCodec?.let { codec ->
-                try {
-                    val inputIndex = codec.dequeueInputBuffer(TIMEOUT_US)
-                    if (inputIndex >= 0) {
-                        codec.queueInputBuffer(inputIndex, 0, 0, 0L, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-                    }
-                } catch (_: Exception) {}
-
+              try {
+    codec.signalEndOfInputStream()
+} catch (_: Exception) {
+}
                 try {
                     codec.stop()
                 } catch (_: Exception) {}
@@ -366,7 +416,14 @@ class MediaCodecVideoEncoder : IVideoEncoder {
             Log.w(TAG, "Error releasing MediaCodec: ${e.message}")
         } finally {
             mediaCodec = null
-            isHardwareCodec = false
+
+try {
+    inputSurface?.release()
+} catch (_: Exception) {
+}
+
+inputSurface = null
+isHardwareCodec = false
         }
     }
 
@@ -426,84 +483,5 @@ class MediaCodecVideoEncoder : IVideoEncoder {
         } catch (_: Exception) {
             null
         }
-    }
-
-    private fun bitmapToYuv420(bitmap: Bitmap, width: Int, height: Int, colorFormat: Int): ByteArray {
-        val scaled = if (bitmap.width != width || bitmap.height != height) {
-            Bitmap.createScaledBitmap(bitmap, width, height, true)
-        } else {
-            bitmap
-        }
-
-        val requiredArgbSize = width * height
-        var argb = cachedArgbBuffer
-        if (argb == null || argb.size != requiredArgbSize) {
-            argb = IntArray(requiredArgbSize)
-            cachedArgbBuffer = argb
-        }
-        scaled.getPixels(argb, 0, width, 0, 0, width, height)
-
-        val requiredYuvSize = width * height * 3 / 2
-        var yuv = cachedYuvBuffer
-        if (yuv == null || yuv.size != requiredYuvSize) {
-            yuv = ByteArray(requiredYuvSize)
-            cachedYuvBuffer = yuv
-        }
-        var frameIndex = 0
-
-        for (j in 0 until height) {
-            for (i in 0 until width) {
-                val argbPixel = argb[frameIndex++]
-                val r = (argbPixel shr 16) and 0xFF
-                val g = (argbPixel shr 8) and 0xFF
-                val b = argbPixel and 0xFF
-
-                // Y (BT.601)
-                val y = ((66 * r + 129 * g + 25 * b + 128) shr 8) + 16
-                yuv[j * width + i] = y.coerceIn(0, 255).toByte()
-            }
-        }
-
-        if (colorFormat == MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Planar) {
-            var uIndex = width * height
-            var vIndex = width * height + (width * height / 4)
-            for (j in 0 until height step 2) {
-                for (i in 0 until width step 2) {
-                    val p00 = argb[j * width + i]
-                    val r = (p00 shr 16) and 0xFF
-                    val g = (p00 shr 8) and 0xFF
-                    val b = p00 and 0xFF
-
-                    val u = ((-38 * r - 74 * g + 112 * b + 128) shr 8) + 128
-                    val v = ((112 * r - 94 * g - 18 * b + 128) shr 8) + 128
-
-                    if (uIndex < width * height + (width * height / 4)) {
-                        yuv[uIndex++] = u.coerceIn(0, 255).toByte()
-                    }
-                    if (vIndex < yuv.size) {
-                        yuv[vIndex++] = v.coerceIn(0, 255).toByte()
-                    }
-                }
-            }
-        } else {
-            var uvIndex = width * height
-            for (j in 0 until height step 2) {
-                for (i in 0 until width step 2) {
-                    val p00 = argb[j * width + i]
-                    val r = (p00 shr 16) and 0xFF
-                    val g = (p00 shr 8) and 0xFF
-                    val b = p00 and 0xFF
-
-                    val u = ((-38 * r - 74 * g + 112 * b + 128) shr 8) + 128
-                    val v = ((112 * r - 94 * g - 18 * b + 128) shr 8) + 128
-
-                    if (uvIndex < yuv.size - 1) {
-                        yuv[uvIndex++] = u.coerceIn(0, 255).toByte()
-                        yuv[uvIndex++] = v.coerceIn(0, 255).toByte()
-                    }
-                }
-            }
-        }
-        return yuv
     }
 }
