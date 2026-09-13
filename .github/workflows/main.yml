@@ -1,0 +1,156 @@
+name: MVP ESPORTS LIVE - Build APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mvp-esports-live-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build MVP ESPORTS LIVE Debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Read Gradle version
+        id: gradle_version
+        run: |
+          set -euo pipefail
+
+          DISTRIBUTION_URL="$(sed -n 's/^distributionUrl=//p' gradle/wrapper/gradle-wrapper.properties)"
+
+          if [[ -z "$DISTRIBUTION_URL" ]]; then
+            echo "::error::distributionUrl not found in gradle-wrapper.properties."
+            exit 1
+          fi
+
+          GRADLE_VERSION="$(printf '%s\n' "$DISTRIBUTION_URL" | sed -E 's#.*gradle-([0-9]+\.[0-9]+\.[0-9]+)-.*#\1#')"
+
+          if [[ "$GRADLE_VERSION" == "$DISTRIBUTION_URL" ]]; then
+            echo "::error::Could not parse Gradle version from distributionUrl."
+            exit 1
+          fi
+
+          echo "gradle_version=$GRADLE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Project Gradle version: $GRADLE_VERSION"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: ${{ steps.gradle_version.outputs.gradle_version }}
+          cache-read-only: false
+
+      - name: Inspect build configuration
+        run: |
+          set -euo pipefail
+
+          echo "===== Gradle wrapper properties ====="
+          cat gradle/wrapper/gradle-wrapper.properties
+
+          echo
+          echo "===== Version matrix ====="
+          grep -E '^(agp|kotlin|googleDevtoolsKsp)[[:space:]]*=' gradle/libs.versions.toml || true
+
+          echo
+          echo "===== Project files ====="
+          ls -la
+
+      - name: Remove generated Gradle state
+        run: |
+          set -euo pipefail
+          rm -rf .gradle
+          rm -rf app/build
+          rm -rf build
+
+      - name: Generate Debug Keystore
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.android
+          keytool -genkey -v -keystore ~/.android/debug.keystore \
+            -storepass android -alias androiddebugkey -keypass android \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+
+      - name: Gradle clean
+        run: |
+          set -euo pipefail
+          gradle clean \
+            --no-daemon \
+            --no-configuration-cache \
+            --stacktrace
+
+      - name: Build Debug APK
+        id: build
+        run: |
+          set -o pipefail
+          gradle :app:assembleDebug \
+            -Pandroid.injected.signing.store.file=$HOME/.android/debug.keystore \
+            -Pandroid.injected.signing.store.password=android \
+            -Pandroid.injected.signing.key.alias=androiddebugkey \
+            -Pandroid.injected.signing.key.password=android \
+            --no-daemon \
+            --no-configuration-cache \
+            --stacktrace \
+            --warning-mode all \
+            2>&1 | tee build.log
+
+      - name: Verify APK
+        run: |
+          set -euo pipefail
+
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+
+          if [[ ! -f "$APK" ]]; then
+            echo "::error::APK was not generated."
+            echo
+            echo "Available outputs:"
+            find app/build/outputs -maxdepth 5 -type f -print 2>/devnull || true
+            exit 1
+          fi
+
+          echo "======================================"
+          echo "MVP ESPORTS LIVE APK BUILD SUCCESS"
+          echo "======================================"
+          ls -lh "$APK"
+
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MVP-ESPORTS-LIVE-debug-${{ github.sha }}
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MVP-ESPORTS-LIVE-build-log-${{ github.sha }}
+          path: build.log
+          if-no-files-found: ignore
+          retention-days: 14
+          
