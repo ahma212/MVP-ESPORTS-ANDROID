@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MVP ESPORTS PK Live Analyzer</title>
+    <meta name="description" content="Cross-platform PUBG Mobile esports live-stream analyzer, event processing, and overlay foundation with Supabase integration.">
+    <meta property="og:title" content="MVP ESPORTS PK Live Analyzer">
+    <meta property="og:description" content="Cross-platform PUBG Mobile esports live-stream analyzer, event processing, and overlay foundation with Supabase integration.">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; background: #0E0E10; color: #F2F2F5; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
+        .card { background: #16161A; border: 1px solid #2B2B33; border-radius: 12px; padding: 32px; max-width: 540px; width: 100%; box-shadow: 0 12px 32px rgba(0,0,0,0.5); text-align: center; }
+        .badge { display: inline-block; background: #26180E; color: #FF6600; border: 1px solid #FF6600; font-size: 11px; font-weight: 800; letter-spacing: 1px; padding: 4px 10px; border-radius: 4px; margin-bottom: 16px; }
+        h1 { font-size: 20px; font-weight: 900; letter-spacing: 0.5px; margin-bottom: 8px; color: #FFFFFF; }
+        p { font-size: 13px; color: #9E9EAA; line-height: 1.6; margin-bottom: 24px; }
+        .btn { display: flex; align-items: center; justify-content: center; gap: 8px; background: #FF6600; color: #000000; text-decoration: none; font-size: 14px; font-weight: 800; padding: 14px 24px; border-radius: 6px; transition: background 0.2s; margin-bottom: 20px; }
+        .btn:hover { background: #FF8533; }
+        .meta { background: #1D1D22; border: 1px solid #2B2B33; border-radius: 6px; padding: 12px; font-size: 11px; color: #72727E; text-align: left; margin-bottom: 16px; }
+        .meta-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+        .meta-row:last-child { margin-bottom: 0; }
+        .meta-val { color: #F2F2F5; font-weight: 600; font-family: monospace; }
+        .note { font-size: 11px; color: #72727E; line-height: 1.5; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="badge">NATIVE ANDROID // PHASE 4C.1</div>
+        <h1>MVP ESPORTS PK</h1>
+        <p>Live Screen Capture & Detection Engine Foundation</p>
+        <a href="/app-debug.apk" class="btn" download="app-debug.apk">
+            <span>⬇</span> DOWNLOAD APP-DEBUG.APK (22 MB)
+        </a>
+        <div class="meta">
+            <div class="meta-row"><span>Package:</span><span class="meta-val">com.example.esports</span></div>
+            <div class="meta-row"><span>Build Target:</span><span class="meta-val">Android API 26+</span></div>
+            <div class="meta-row"><span>Binary Size:</span><span class="meta-val">~22 MB</span></div>
+            <div class="meta-row"><span>Capture Engine:</span><span class="meta-val">MediaProjection / Foreground</span></div>
+        </div>
+        <div class="note">
+            💡 <strong>Tip for Mobile Install:</strong> Open this page on your Android phone or sideload using <code>adb install -r app-debug.apk</code>.
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,31 @@
+--- app/src/main/java/com/example/services/supabase/SupabaseService.kt
++++ app/src/main/java/com/example/services/supabase/SupabaseService.kt
+@@ -196,16 +196,18 @@
+         
+         val sessionId = activeSessionId ?: return Result.failure(IllegalStateException("No active session"))
+         
++        val killerPlayer = event.killerPlayerName?.let { resolvePlayerId(it) }
++        val victimPlayer = event.victimPlayerName?.let { resolvePlayerId(it) }
+         val req = RpcEventRequest(
+             p_session_id = sessionId,
+             p_broadcast_match_id = activeMatchId,
+             p_event_type = event.eventType.name.lowercase(),
+             p_source = "detector",
+-            p_killer_player_id = event.killerPlayerId, // We must resolve this before calling
+-            p_victim_player_id = event.victimPlayerId,
+-            p_killer_team_id = event.killerTeamId,
+-            p_victim_team_id = event.victimTeamId,
++            p_killer_player_id = killerPlayer?.id,
++            p_victim_player_id = victimPlayer?.id,
++            p_killer_team_id = killerPlayer?.teamId,
++            p_victim_team_id = victimPlayer?.teamId,
+             p_external_event_id = UUID.randomUUID().toString(),
+-            p_detection_confidence = event.confidence,
++            p_detection_confidence = event.confidence.toDouble(),
+             p_event_payload = mapOf(
+-                "killer" to (event.killerName ?: ""),
+-                "victim" to (event.victimName ?: "")
++                "killer" to (event.killerPlayerName ?: ""),
++                "victim" to (event.victimPlayerName ?: "")
+             )
+         )

@@ -1,0 +1,11 @@
+{
+  "name": "mvp-esports-pk",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node server.ts",
+    "start": "node server.ts",
+    "build": "node build.js"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "MVP ESPORTS PK Live Analyzer",
+  "description": "Cross-platform PUBG Mobile esports live-stream analyzer, event processing, and overlay foundation with Supabase integration.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
