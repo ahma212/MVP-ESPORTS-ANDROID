@@ -115,7 +115,7 @@ class FloatingPointerOverlay(private val context: Context) : IFloatingControlSer
                 if (isAttached) {
     try {
         windowManager.updateViewLayout(
-            root,
+            overlayContainer,
             params
         )
     } catch (e: Exception) {

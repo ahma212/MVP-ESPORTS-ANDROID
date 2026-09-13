@@ -209,9 +209,9 @@ fun EsportsStandingTable(
         .padding(horizontal = 10.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
+       Text(
                 text = "#",
-                color = Color(0xFF7DD3FC)
+                color = Color(0xFF7DD3FC),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.SansSerif,
@@ -369,12 +369,9 @@ private fun EsportsStandingRow(
                 .padding(vertical = 3.dp),
             contentAlignment = Alignment.Center
         ) {
-            Text(
+           Text(
                 text = "#${team.rank}",
-                color = if (isTeamEliminated)
-    MvpEliminatedGrey
-else
-    Color(0xFFFFD54A), rankAccentColor,
+                color = if (isTeamEliminated) MvpEliminatedGrey else rankAccentColor,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.SansSerif

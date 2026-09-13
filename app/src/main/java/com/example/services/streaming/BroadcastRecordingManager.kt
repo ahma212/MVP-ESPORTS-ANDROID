@@ -335,8 +335,8 @@ if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             StationDeskManager.updateRecordingState(
                 isRecording = true,
                 durationSeconds = 0L,
-                fileName = file.name,
-                filePath = file.absolutePath
+                fileName = currentOutputFile?.name ?: "recording.mp4",
+                filePath = currentOutputFile?.absolutePath ?: ""
             )
 
             // 1. Drain loop for encoded frames -> MediaMuxer
@@ -437,14 +437,14 @@ if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     StationDeskManager.updateRecordingState(
                         isRecording = true,
                         durationSeconds = dur,
-                        fileName = file.name,
-                        filePath = file.absolutePath
+                        fileName = currentOutputFile?.name ?: "recording.mp4",
+                        filePath = currentOutputFile?.absolutePath ?: ""
                     )
                 }
             }
 
-            Log.i(TAG, "Local broadcast recording started: ${file.absolutePath}")
-            _fileCreationStatus.value = "RECORDING_ACTIVE: ${file.name}"
+            Log.i(TAG, "Local broadcast recording started: ${currentOutputFile?.absolutePath}")
+            _fileCreationStatus.value = "RECORDING_ACTIVE: ${currentOutputFile?.name}"
             _recordingError.value = null
             Result.success(Unit)
         } catch (e: Exception) {

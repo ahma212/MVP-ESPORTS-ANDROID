@@ -290,13 +290,13 @@ try {
                         spsPpsHeader = configRecord
                         _encodedFrames.tryEmit(
                             EncodedVideoFrame(
-    data = resultBytes,
-    presentationTimeUs = bufferInfo.presentationTimeUs,
-    isKeyFrame = isKeyFrame,
-    isCodecConfig = false,
-    width = currentWidth,
-    height = currentHeight
-)
+                                data = configRecord,
+                                presentationTimeUs = bufferInfo.presentationTimeUs,
+                                isKeyFrame = true,
+                                isCodecConfig = true,
+                                width = currentWidth,
+                                height = currentHeight
+                            )
                         )
                     }
                 }
