@@ -43,10 +43,28 @@ fun BroadcastDiagnosticsAndRecordingCard(
     val stationState by com.example.services.station.StationDeskManager.stationState.collectAsState()
     
     val storagePermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
-        contract = androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
-    ) {
-        com.example.services.station.StationDeskManager.startRecordingFromStation(context)
+    contract = androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
+) { permissions ->
+
+    val granted = permissions.values.all { it }
+
+    if (granted) {
+        val result = com.example.services.station.StationDeskManager.startRecordingFromStation(context)
+
+        if (result.isFailure) {
+            android.util.Log.e(
+                "MVP_RECORDING",
+                "Recording start failed",
+                result.exceptionOrNull()
+            )
+        }
+    } else {
+        android.util.Log.w(
+            "MVP_RECORDING",
+            "Required permission was not granted"
+        )
     }
+}
 
     // Periodically force UI recomposition for relative timestamp updates
     var ticks by remember { mutableStateOf(0L) }
@@ -344,16 +362,36 @@ fun BroadcastDiagnosticsAndRecordingCard(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Button(
-                        onClick = {
-                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                                storagePermissionLauncher.launch(arrayOf(android.Manifest.permission.READ_MEDIA_VIDEO))
-                            } else {
-                                storagePermissionLauncher.launch(arrayOf(
-                                    android.Manifest.permission.WRITE_EXTERNAL_STORAGE,
-                                    android.Manifest.permission.READ_EXTERNAL_STORAGE
-                                ))
-                            }
-                        },
+   onClick = {
+    try {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) {
+            storagePermissionLauncher.launch(
+                arrayOf(
+                    android.Manifest.permission.WRITE_EXTERNAL_STORAGE,
+                    android.Manifest.permission.READ_EXTERNAL_STORAGE
+                )
+            )
+        } else {
+            val result =
+                com.example.services.station.StationDeskManager
+                    .startRecordingFromStation(context)
+
+            if (result.isFailure) {
+                android.util.Log.e(
+                    "MVP_RECORDING",
+                    "Recording start failed",
+                    result.exceptionOrNull()
+                )
+            }
+        }
+    } catch (e: Exception) {
+        android.util.Log.e(
+            "MVP_RECORDING",
+            "Recording button crash",
+            e
+        )
+    }
+},
                         enabled = !isRecording,
                         modifier = Modifier
                             .weight(1f)

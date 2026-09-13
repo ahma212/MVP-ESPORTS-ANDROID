@@ -23,9 +23,9 @@ enum class StationFps(val fps: Int, val label: String) {
 }
 
 enum class StationQuality(val bitrate: Int, val label: String) {
-    LOW(1500000, "Low (1.5M)"),
-    MEDIUM(4000000, "Medium (4.0M)"),
-    HIGH(8000000, "High (8.0M)")
+    LOW(2500000, "Low (2.5M)"),
+    MEDIUM(6000000, "Medium (6.0M)"),
+    HIGH(12000000, "High (12.0M)")
 }
 
 enum class SmoothnessMode(val label: String, val previewRes: String, val targetDetectFps: Float) {

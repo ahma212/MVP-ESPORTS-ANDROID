@@ -182,12 +182,29 @@ class BroadcastRecordingManager private constructor() {
             val file = File(targetDir, "MVP_STATION_${System.currentTimeMillis()}.mp4")
             currentOutputFile = file
 
-            mediaMuxer = MediaMuxer(file.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
             muxerStarted = false
-            videoTrackIndex = -1
+videoTrackIndex = -1
+mediaMuxer = null
 
-            val configRes = recordingEncoder.configureEncoder(width, height, bitrate, fps)
-            if (configRes.isFailure) return Result.failure(configRes.exceptionOrNull()!!)
+val configRes = recordingEncoder.configureEncoder(width, height, bitrate, fps)
+
+if (configRes.isFailure) {
+    _recordingError.value =
+        configRes.exceptionOrNull()?.message ?: "Encoder configuration failed"
+
+    recordingEncoder.stopEncoder()
+
+    return Result.failure(
+        configRes.exceptionOrNull()
+            ?: IllegalStateException("Encoder configuration failed")
+    )
+}
+
+// Encoder successfully configured BEFORE creating MediaMuxer.
+mediaMuxer = MediaMuxer(
+    file.absolutePath,
+    MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4
+)
 
             recordingStartTimeMs = SystemClock.elapsedRealtime()
             _isRecording.value = true
@@ -211,14 +228,33 @@ class BroadcastRecordingManager private constructor() {
                 recordingEncoder.encodedFrames.collect { encodedFrame ->
                     if (!_isRecording.value) return@collect
                     
-                    if (encodedFrame.isCodecConfig) {
-                        val format = recordingEncoder.getOutputFormat()
-                        if (format != null) {
-                            videoTrackIndex = mediaMuxer!!.addTrack(format)
-                            mediaMuxer!!.start()
-                            muxerStarted = true
-                        }
-                    }
+                    if (encodedFrame.isCodecConfig && !muxerStarted) {
+    val format = recordingEncoder.getOutputFormat()
+
+    if (format != null && mediaMuxer != null) {
+        try {
+            videoTrackIndex = mediaMuxer!!.addTrack(format)
+            mediaMuxer!!.start()
+            muxerStarted = true
+
+            Log.i(
+                TAG,
+                "MediaMuxer started successfully. Track=$videoTrackIndex"
+            )
+        } catch (e: Exception) {
+            Log.e(
+                TAG,
+                "MediaMuxer start failed",
+                e
+            )
+
+            _recordingError.value =
+                e.message ?: "MediaMuxer start failed"
+
+            _isRecording.value = false
+        }
+    }
+}
                     
                     if (muxerStarted && !encodedFrame.isCodecConfig) {
                         val bufferInfo = MediaCodec.BufferInfo()
