@@ -100,84 +100,94 @@ private val surfacePaint =
             // Release any existing encoder instance first
             stopEncoder()
 
-            // HARDWARE SURFACE INPUT
-// Removes the expensive CPU Bitmap -> YUV420 conversion on every frame.
-val format = MediaFormat.createVideoFormat(
-    MediaFormat.MIMETYPE_VIDEO_AVC,
-    width,
-    height
-).apply {
-    .setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-.setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
-.setInteger(MediaFormat.KEY_FRAME_RATE, fps)
-.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)   // 1 second keyframe = sharper + better seeking
+// HARDWARE SURFACE INPUT
+            // Removes the expensive CPU Bitmap -> YUV420 conversion on every frame.
+            val format = MediaFormat.createVideoFormat(
+                MediaFormat.MIMETYPE_VIDEO_AVC,
+                width,
+                height
+            ).apply {
+                setInteger(
+                    MediaFormat.KEY_COLOR_FORMAT,
+                    MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface
+                )
+                setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
+                setInteger(MediaFormat.KEY_FRAME_RATE, fps)
+                setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1) // 1 second keyframe = sharper
 
-// High Profile for better quality at same bitrate
-try {
-    setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.AVCProfileHigh)
-    setInteger(MediaFormat.KEY_LEVEL, MediaCodecInfo.CodecProfileLevel.AVCLevel41)
-} catch (_: Exception) {}
+                // High Profile for better quality at same bitrate
+                try {
+                    setInteger(
+                        MediaFormat.KEY_PROFILE,
+                        MediaCodecInfo.CodecProfileLevel.AVCProfileHigh
+                    )
+                    setInteger(
+                        MediaFormat.KEY_LEVEL,
+                        MediaCodecInfo.CodecProfileLevel.AVCLevel41
+                    )
+                } catch (_: Exception) {
+                }
 
-try {
-    setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
-} catch (_: Exception) {}
+                try {
+                    setInteger(
+                        MediaFormat.KEY_BITRATE_MODE,
+                        MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR
+                    )
+                } catch (_: Exception) {
+                }
 
-// Some devices support this for better quality
-try {
-    setInteger(MediaFormat.KEY_COMPLEXITY, 8) // higher = better quality (0-10 range on some codecs)
-} catch (_: Exception) {}
-        // Some hardware encoders do not expose this key.
-    }
-}
+                // Some devices support this for better quality
+                try {
+                    setInteger(MediaFormat.KEY_COMPLEXITY, 8)
+                } catch (_: Exception) {
+                }
+            }
 
+            try {
+                val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
 
-try {
-    val codec =
-        MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+                codec.configure(
+                    format,
+                    null,
+                    null,
+                    MediaCodec.CONFIGURE_FLAG_ENCODE
+                )
 
-    codec.configure(
-        format,
-        null,
-        null,
-        MediaCodec.CONFIGURE_FLAG_ENCODE
-    )
+                // Hardware encoder Surface.
+                val surface = codec.createInputSurface()
 
-    // Hardware encoder Surface.
-    val surface = codec.createInputSurface()
+                codec.start()
 
-    codec.start()
+                mediaCodec = codec
+                inputSurface = surface
+                isHardwareCodec = true
 
-    mediaCodec = codec
-    inputSurface = surface
-    isHardwareCodec = true
+            } catch (e: Exception) {
 
-} catch (e: Exception) {
+                Log.e(
+                    TAG,
+                    "Hardware Surface MediaCodec initialization failed: ${e.message}",
+                    e
+                )
 
-    Log.e(
-        TAG,
-        "Hardware Surface MediaCodec initialization failed: ${e.message}",
-        e
-    )
+                try {
+                    mediaCodec?.release()
+                } catch (_: Exception) {
+                }
 
-    try {
-        mediaCodec?.release()
-    } catch (_: Exception) {
-    }
+                mediaCodec = null
 
-    mediaCodec = null
+                try {
+                    inputSurface?.release()
+                } catch (_: Exception) {
+                }
 
-    try {
-        inputSurface?.release()
-    } catch (_: Exception) {
-    }
+                inputSurface = null
+                isHardwareCodec = false
+                isRunning = false
 
-    inputSurface = null
-    isHardwareCodec = false
-    isRunning = false
-
-    return Result.failure(e)
-}
-
+                return Result.failure(e)
+            }
 // DO NOT use the requested input format for MediaMuxer.
 // We will replace this only after MediaCodec reports
 // INFO_OUTPUT_FORMAT_CHANGED.
