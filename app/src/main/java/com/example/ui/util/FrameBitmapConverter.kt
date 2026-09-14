@@ -37,26 +37,36 @@ object FrameBitmapConverter {
     private var cachedCropImageBitmap: ImageBitmap? = null
     private var lastCropDrawTimeMs: Long = 0L
 
-    @Synchronized
+   @Synchronized
     fun toStationProgramImageBitmap(frame: ComposedBroadcastFrame?): ImageBitmap? {
         val srcBmp = frame?.bitmap ?: return null
         if (srcBmp.isRecycled || srcBmp.width <= 0 || srcBmp.height <= 0) return null
 
         val now = System.currentTimeMillis()
-        if (now - lastStationDrawTimeMs < 33L && cachedStationImageBitmap != null) {
+        // Preview 12fps kaafi hai. Recording alag pipeline pe chalti hai.
+        if (now - lastStationDrawTimeMs < 80L && cachedStationImageBitmap != null) {
             return cachedStationImageBitmap
         }
         lastStationDrawTimeMs = now
 
         return try {
+            val maxPreviewW = 480
+            val targetW = minOf(srcBmp.width, maxPreviewW)
+            val targetH = (srcBmp.height * (targetW.toFloat() / srcBmp.width)).toInt().coerceAtLeast(1)
+
             var bmp = cachedStationBitmap
-            if (bmp == null || bmp.width != srcBmp.width || bmp.height != srcBmp.height || bmp.isRecycled) {
-                bmp = Bitmap.createBitmap(srcBmp.width, srcBmp.height, Bitmap.Config.ARGB_8888)
+            if (bmp == null || bmp.width != targetW || bmp.height != targetH || bmp.isRecycled) {
+                bmp = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.RGB_565)
                 cachedStationBitmap = bmp
                 cachedStationImageBitmap = bmp.asImageBitmap()
             }
             val canvas = Canvas(bmp)
-            canvas.drawBitmap(srcBmp, 0f, 0f, null)
+            canvas.drawBitmap(
+                srcBmp,
+                android.graphics.Rect(0, 0, srcBmp.width, srcBmp.height),
+                android.graphics.Rect(0, 0, targetW, targetH),
+                null
+            )
             cachedStationImageBitmap ?: bmp.asImageBitmap().also { cachedStationImageBitmap = it }
         } catch (_: Exception) {
             null
