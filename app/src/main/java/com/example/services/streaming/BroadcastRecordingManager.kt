@@ -85,7 +85,7 @@ private var pendingVideoPfd: ParcelFileDescriptor? = null
     private val _fileCreationStatus = MutableStateFlow<String?>("IDLE")
     val fileCreationStatus: StateFlow<String?> = _fileCreationStatus.asStateFlow()
 
-    private val _selectedProfile = MutableStateFlow(RecordingProfile.MEDIUM)
+    private val _selectedProfile = MutableStateFlow(RecordingProfile.LOW)
     val selectedProfile: StateFlow<RecordingProfile> = _selectedProfile.asStateFlow()
 
     private val _selectedFps = MutableStateFlow(30)
@@ -402,11 +402,25 @@ if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
     }
 }
                     
-                    if (muxerStarted && !encodedFrame.isCodecConfig) {
+                    if (muxerStarted && !encodedFrame.isCodecConfig && encodedFrame.data.isNotEmpty()) {
                         val bufferInfo = MediaCodec.BufferInfo()
-                        bufferInfo.set(0, encodedFrame.data.size, encodedFrame.presentationTimeUs, 0)
+                        val flags = if (encodedFrame.isKeyFrame) {
+                            MediaCodec.BUFFER_FLAG_KEY_FRAME
+                        } else {
+                            0
+                        }
+                        bufferInfo.set(
+                            0,
+                            encodedFrame.data.size,
+                            encodedFrame.presentationTimeUs,
+                            flags
+                        )
                         val buffer = ByteBuffer.wrap(encodedFrame.data)
-                        mediaMuxer!!.writeSampleData(videoTrackIndex, buffer, bufferInfo)
+                        try {
+                            mediaMuxer?.writeSampleData(videoTrackIndex, buffer, bufferInfo)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "writeSampleData failed: ${e.message}")
+                        }
                     }
                 }
             }
@@ -473,32 +487,23 @@ if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             durationJob = null
 
             recordingEncoder.stopEncoder()
-            
-            if (muxerStarted) {
-                mediaMuxer?.stop()
-            }
+
             try {
-    if (muxerStarted) {
-        mediaMuxer?.stop()
-    }
-} catch (e: Exception) {
-    Log.w(
-        TAG,
-        "Muxer stop warning: ${e.message}"
-    )
-}
+                if (muxerStarted) {
+                    mediaMuxer?.stop()
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Muxer stop warning: ${e.message}")
+            }
 
-try {
-    mediaMuxer?.release()
-} catch (e: Exception) {
-    Log.w(
-        TAG,
-        "Muxer release warning: ${e.message}"
-    )
-}
+            try {
+                mediaMuxer?.release()
+            } catch (e: Exception) {
+                Log.w(TAG, "Muxer release warning: ${e.message}")
+            }
 
-mediaMuxer = null
-muxerStarted = false
+            mediaMuxer = null
+            muxerStarted = false
 
 // Publish the MediaStore video only AFTER the MP4 has
 // been completely finalized.
@@ -589,27 +594,37 @@ pendingVideoUri = null
 
     private suspend fun encodeAndMuxFrame(composedFrame: ComposedBroadcastFrame) {
         try {
-            // Priority: PUBG performance. If load is too high, drop frames to maintain system responsiveness.
-            if (isThrottled && composedFrame.timestampMs % 2 != 0L) {
-                return
+            // Stronger throttling to protect game + preview smoothness
+            if (isThrottled) {
+                // Drop \~2 out of every 3 frames under load
+                if (composedFrame.timestampMs % 3 != 0L) {
+                    return
+                }
             }
 
             val start = SystemClock.elapsedRealtime()
+
+            // Fixed frame interval based on selected FPS (prevents slow-motion video)
+            val targetFps = _selectedFps.value.coerceIn(15, 30)
+            val frameIntervalUs = 1_000_000L / targetFps
             val presentationTimeUs = (SystemClock.elapsedRealtime() - recordingStartTimeMs) * 1000L
+
             recordingEncoder.encodeFrame(composedFrame.bitmap, presentationTimeUs)
+
             val duration = SystemClock.elapsedRealtime() - start
 
             synchronized(frameProcessTimes) {
                 frameProcessTimes.add(duration)
-                if (frameProcessTimes.size > 10) {
+                if (frameProcessTimes.size > 8) {
                     frameProcessTimes.removeAt(0)
                 }
                 averageProcessTimeMs = frameProcessTimes.average()
-                
-                if (averageProcessTimeMs > 25.0 && !isThrottled) {
+
+                // More aggressive throttle thresholds
+                if (averageProcessTimeMs > 22.0 && !isThrottled) {
                     isThrottled = true
-                    Log.w(TAG, "High encoder load detected. Halving local recording rate to protect PUBG gameplay smoothness.")
-                } else if (averageProcessTimeMs < 12.0 && isThrottled) {
+                    Log.w(TAG, "High encoder load → dropping frames to protect game + preview")
+                } else if (averageProcessTimeMs < 14.0 && isThrottled) {
                     isThrottled = false
                 }
             }
@@ -617,7 +632,6 @@ pendingVideoUri = null
             Log.e(TAG, "Error encoding recording frame: ${e.message}", e)
         }
     }
-
     private fun cleanupRecordingResources() {
         _isRecording.value = false
         frameChannel?.close()

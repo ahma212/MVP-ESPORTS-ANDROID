@@ -107,27 +107,29 @@ val format = MediaFormat.createVideoFormat(
     width,
     height
 ).apply {
-    setInteger(
-        MediaFormat.KEY_COLOR_FORMAT,
-        MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface
-    )
+    .setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
+.setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
+.setInteger(MediaFormat.KEY_FRAME_RATE, fps)
+.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)   // 1 second keyframe = sharper + better seeking
 
-    setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
+// High Profile for better quality at same bitrate
+try {
+    setInteger(MediaFormat.KEY_PROFILE, MediaCodecInfo.CodecProfileLevel.AVCProfileHigh)
+    setInteger(MediaFormat.KEY_LEVEL, MediaCodecInfo.CodecProfileLevel.AVCLevel41)
+} catch (_: Exception) {}
 
-    setInteger(MediaFormat.KEY_FRAME_RATE, fps)
+try {
+    setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
+} catch (_: Exception) {}
 
-    // 2-second keyframe interval.
-    setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 2)
-
-    try {
-        setInteger(
-            MediaFormat.KEY_BITRATE_MODE,
-            MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR
-        )
-    } catch (_: Exception) {
+// Some devices support this for better quality
+try {
+    setInteger(MediaFormat.KEY_COMPLEXITY, 8) // higher = better quality (0-10 range on some codecs)
+} catch (_: Exception) {}
         // Some hardware encoders do not expose this key.
     }
 }
+
 
 try {
     val codec =
