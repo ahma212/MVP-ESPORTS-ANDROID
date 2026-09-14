@@ -318,7 +318,7 @@ class ScreenCaptureService : Service() {
             mediaProjection?.registerCallback(mediaProjectionCallback, handler)
 
             // Create ImageReader for RGBA_8888 frames
-            val reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
+          val reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3)
             imageReader = reader
 
             reader.setOnImageAvailableListener({ ir ->

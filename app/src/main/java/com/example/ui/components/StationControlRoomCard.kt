@@ -681,7 +681,12 @@ Column(
                     fontFamily = FontFamily.SansSerif,
                     color = MvpTextSubtitle
                 )
-                listOf(StationResolution.RES_720P, StationResolution.RES_1080P).forEach { res ->
+              listOf(
+                    StationResolution.RES_360P,
+                    StationResolution.RES_480P,
+                    StationResolution.RES_720P,
+                    StationResolution.RES_1080P
+                ).forEach { res ->
                     val isSelected = stationState.resolution == res
                     FilterChip(
                         selected = isSelected,

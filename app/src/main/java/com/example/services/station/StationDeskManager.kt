@@ -12,6 +12,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
 enum class StationResolution(val width: Int, val height: Int, val label: String) {
+    RES_360P(640, 360, "360p"),
+    RES_480P(854, 480, "480p"),
     RES_720P(1280, 720, "720p"),
     RES_1080P(1920, 1080, "1080p")
 }
@@ -23,9 +25,9 @@ enum class StationFps(val fps: Int, val label: String) {
 }
 
 enum class StationQuality(val bitrate: Int, val label: String) {
-    LOW(2500000, "Low (2.5M)"),
-    MEDIUM(6000000, "Medium (6.0M)"),
-    HIGH(12000000, "High (12.0M)")
+    LOW(3500000, "Low (3.5M)"),
+    MEDIUM(8000000, "Medium (8.0M)"),
+    HIGH(16000000, "High (16.0M)")
 }
 
 enum class SmoothnessMode(val label: String, val previewRes: String, val targetDetectFps: Float) {

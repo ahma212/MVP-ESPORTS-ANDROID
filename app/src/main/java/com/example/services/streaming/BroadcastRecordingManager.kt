@@ -26,9 +26,9 @@ import java.io.File
 import java.nio.ByteBuffer
 
 enum class RecordingProfile(val label: String, val width: Int, val height: Int, val bitrate: Int) {
-    HIGH("High (1080p)", 1920, 1080, 8000000),
-    MEDIUM("Medium (720p)", 1280, 720, 4000000),
-    LOW("Low (480p)", 854, 480, 1500000)
+    HIGH("High (1080p)", 1920, 1080, 16000000),
+    MEDIUM("Medium (720p)", 1280, 720, 8000000),
+    LOW("Low (360p)", 640, 360, 3500000)
 }
 
 /**
@@ -69,7 +69,8 @@ private var muxerStarted = false
 
 private var pendingVideoUri: Uri? = null
 private var pendingVideoPfd: ParcelFileDescriptor? = null
-
+private var samplesWritten: Long = 0L
+private var lastMuxPtsUs: Long = -1L
     // Bounded queue: max 2 frames, drops oldest if encoder is busy
     private var frameChannel: Channel<ComposedBroadcastFrame>? = null
 
@@ -172,14 +173,17 @@ private var pendingVideoPfd: ParcelFileDescriptor? = null
     fun startRecording(context: Context, width: Int = 1280, height: Int = 720, fps: Int = 30, bitrate: Int = 4000000): Result<Unit> {
         if (_isRecording.value) return Result.success(Unit)
 
-        return try {
+      return try {
             appContext = context.applicationContext
+            _selectedFps.value = fps.coerceIn(24, 60)
             val displayName =
     "MVP_STATION_${System.currentTimeMillis()}.mp4"
 
 muxerStarted = false
 videoTrackIndex = -1
 mediaMuxer = null
+samplesWritten = 0L
+lastMuxPtsUs = -1L
 
 pendingVideoUri = null
 pendingVideoPfd = null
@@ -409,15 +413,23 @@ if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                         } else {
                             0
                         }
+                        val minStepUs = 1_000_000L / _selectedFps.value.coerceIn(24, 60)
+                        val pts = if (lastMuxPtsUs < 0L) {
+                            0L
+                        } else {
+                            maxOf(encodedFrame.presentationTimeUs, lastMuxPtsUs + minStepUs)
+                        }
+                        lastMuxPtsUs = pts
                         bufferInfo.set(
                             0,
                             encodedFrame.data.size,
-                            encodedFrame.presentationTimeUs,
+                            pts,
                             flags
                         )
                         val buffer = ByteBuffer.wrap(encodedFrame.data)
                         try {
                             mediaMuxer?.writeSampleData(videoTrackIndex, buffer, bufferInfo)
+                            samplesWritten++
                         } catch (e: Exception) {
                             Log.e(TAG, "writeSampleData failed: ${e.message}")
                         }
@@ -486,10 +498,16 @@ if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             durationJob?.cancel()
             durationJob = null
 
-            recordingEncoder.stopEncoder()
+            try {
+                recordingEncoder.stopEncoder()
+            } catch (e: Exception) {
+                Log.w(TAG, "Encoder stop warning: ${e.message}")
+            }
+
+            val canPublish = muxerStarted && samplesWritten > 0L
 
             try {
-                if (muxerStarted) {
+                if (canPublish) {
                     mediaMuxer?.stop()
                 }
             } catch (e: Exception) {
@@ -505,44 +523,32 @@ if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             mediaMuxer = null
             muxerStarted = false
 
-// Publish the MediaStore video only AFTER the MP4 has
-// been completely finalized.
 if (
     Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
     pendingVideoUri != null
 ) {
     try {
-
         pendingVideoPfd?.close()
         pendingVideoPfd = null
 
-        val values =
-            ContentValues().apply {
-                put(
-                    MediaStore.Video.Media.IS_PENDING,
-                    0
-                )
+        val uri = pendingVideoUri!!
+        if (canPublish) {
+            val values = ContentValues().apply {
+                put(MediaStore.Video.Media.IS_PENDING, 0)
+                put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+                put(MediaStore.Video.Media.DURATION, lastDur * 1000L)
+                put(MediaStore.Video.Media.DATE_ADDED, System.currentTimeMillis() / 1000L)
+                put(MediaStore.Video.Media.DATE_TAKEN, System.currentTimeMillis())
             }
-
-        appContext?.contentResolver?.update(
-            pendingVideoUri!!,
-            values,
-            null,
-            null
-        )
-
-        Log.i(
-            TAG,
-            "Video published to Gallery: $pendingVideoUri"
-        )
-
+            appContext?.contentResolver?.update(uri, values, null, null)
+            Log.i(TAG, "Video published to Gallery: $uri samples=$samplesWritten")
+        } else {
+            appContext?.contentResolver?.delete(uri, null, null)
+            Log.w(TAG, "Deleted empty/invalid pending video. samples=$samplesWritten")
+            _recordingError.value = "Recording file empty. Record at least 2-3 seconds."
+        }
     } catch (e: Exception) {
-
-        Log.e(
-            TAG,
-            "Failed to publish video to Gallery",
-            e
-        )
+        Log.e(TAG, "Failed to publish video to Gallery", e)
     }
 }
 
@@ -605,8 +611,7 @@ pendingVideoUri = null
             val start = SystemClock.elapsedRealtime()
 
             // Fixed frame interval based on selected FPS (prevents slow-motion video)
-            val targetFps = _selectedFps.value.coerceIn(15, 30)
-            val frameIntervalUs = 1_000_000L / targetFps
+            val targetFps = _selectedFps.value.coerceIn(24, 60)
             val presentationTimeUs = (SystemClock.elapsedRealtime() - recordingStartTimeMs) * 1000L
 
             recordingEncoder.encodeFrame(composedFrame.bitmap, presentationTimeUs)
